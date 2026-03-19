@@ -1,0 +1,14 @@
+services:
+  postgres:
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+  tb-monolith:
+    volumes:
+      - tb-log-volume:/var/log/thingsboard
+volumes:
+  postgres-db-volume:
+      name: ${POSTGRES_DATA_VOLUME}
+      external: true
+  tb-log-volume:
+      name: ${TB_LOG_VOLUME}
+      external: true

@@ -1,0 +1,16 @@
+services:
+  postgres:
+    restart: always
+    image: "postgres:15"
+    ports:
+      - "5432"
+    environment:
+      POSTGRES_DB: thingsboard
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./custom-sql:/custom-sql
+  tb-monolith:
+    env_file:
+      - ./tb-node.env
+    depends_on:
+      - postgres

@@ -1,0 +1,38 @@
+<configuration>
+    <appender name="TEST_CONTAINER" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[test-container]: %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="SERVICES_LOG" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="THINGSBOARD_LOG" level="DEBUG" additivity="false">
+        <appender-ref ref="SERVICES_LOG"/>
+    </logger>
+
+    <logger name="TB_AGENT_LOG" level="DEBUG" additivity="false">
+        <appender-ref ref="SERVICES_LOG"/>
+    </logger>
+
+    <logger name="THINGSBOARD_KAFKA_LOG" level="DEBUG" additivity="false">
+        <appender-ref ref="SERVICES_LOG"/>
+    </logger>
+
+    <logger name="org.testcontainers" level="INFO" additivity="false">
+        <appender-ref ref="TEST_CONTAINER"/>
+    </logger>
+
+    <logger name="org.thingsboard.server" level="INFO" additivity="false">
+        <appender-ref ref="SERVICES_LOG"/>
+    </logger>
+
+    <root level="WARN">
+        <appender-ref ref="TEST_CONTAINER"/>
+    </root>
+
+</configuration>
