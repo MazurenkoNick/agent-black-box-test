@@ -230,6 +230,18 @@ public abstract class AbstractContainerTest {
         }
     }
 
+    protected void awaitAllEventsFinished(AgentApplicationId appId) {
+        Awaitility.await("all events finished for " + appId)
+                .pollInterval(2, TimeUnit.SECONDS)
+                .atMost(120, TimeUnit.SECONDS)
+                .until(() -> {
+                    PageData<AgentAppEvent> events = cloudRestClient.getAgentAppEvents(appId, new PageLink(100));
+                    if (events == null || events.getData().isEmpty()) return false;
+                    return events.getData().stream().allMatch(e ->
+                            AgentAppEventStatus.FINISHED.equals(e.getStatus()) || AgentAppEventStatus.ERROR.equals(e.getStatus()));
+                });
+    }
+
     // --- DinD container verification helpers ---
 
     protected void awaitContainersRunning(String projectName, long expectedCount) {
