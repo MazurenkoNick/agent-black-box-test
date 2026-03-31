@@ -1,0 +1,14 @@
+services:
+  tb-monolith:
+    environment:
+      EDGES_RPC_SSL_ENABLED: "true"
+      EDGES_RPC_SSL_CERT: "/ssl/server.pem"
+      EDGES_RPC_SSL_PRIVATE_KEY: "/ssl/server-key.pem"
+    volumes:
+      - ./ssl:/ssl:ro
+  tb-agent:
+    environment:
+      TB_RPC_SSL_ENABLED: "true"
+      TB_RPC_SSL_CERT: "/ssl/ca.pem"
+    volumes:
+      - ./ssl:/ssl:ro

@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
@@ -47,11 +48,15 @@ public class TestConfiguration {
     }
 
     private void createComposeFiles() {
-        composeFiles = List.of(
+        var files = new ArrayList<>(List.of(
                 new File(DOCKER_SOURCE_DIR + "docker-compose.yml"),
                 new File(DOCKER_SOURCE_DIR + "docker-compose.postgres.yml"),
                 new File(DOCKER_SOURCE_DIR + "docker-compose.volumes.yml")
-        );
+        ));
+        if (Boolean.getBoolean("ssl")) {
+            files.add(new File(DOCKER_SOURCE_DIR + "docker-compose.ssl.yml"));
+        }
+        composeFiles = files;
     }
 
     private void loadTBConfiguration() {
