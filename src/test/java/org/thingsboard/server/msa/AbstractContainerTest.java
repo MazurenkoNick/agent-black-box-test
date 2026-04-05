@@ -32,6 +32,8 @@ import org.thingsboard.server.common.data.agent.AgentAppEventRequest;
 import org.thingsboard.server.common.data.agent.AgentAppEventStatus;
 import org.thingsboard.server.common.data.agent.AgentApplication;
 import org.thingsboard.server.common.data.agent.AgentApplicationType;
+import org.thingsboard.server.common.data.agent.AgentBulkAction;
+import org.thingsboard.server.common.data.agent.AgentBulkActionStatus;
 import org.thingsboard.server.common.data.agent.config.AgentAppConfigType;
 import org.thingsboard.server.common.data.agent.config.DockerComposeConfig;
 import org.thingsboard.server.common.data.agent.step.AgentAppStepType;
@@ -46,6 +48,7 @@ import org.thingsboard.server.msa.config.TestConfiguration;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import static org.thingsboard.server.msa.config.TestConfiguration.DIND_SERVICE_NAME;
@@ -66,19 +69,30 @@ public abstract class AbstractContainerTest {
 
     @Rule
     public TestRule watcher = new TestWatcher() {
+        private long startTime;
+
         @Override
         protected void starting(Description description) {
-            log.info("==> Starting test: {}.{}", description.getClassName(), description.getMethodName());
+            startTime = System.currentTimeMillis();
+            log.info("=================================================");
+            log.info("STARTING TEST: {}", description.getMethodName());
+            log.info("=================================================");
         }
 
         @Override
         protected void succeeded(Description description) {
-            log.info("==> Test succeeded: {}.{}", description.getClassName(), description.getMethodName());
+            long elapsed = System.currentTimeMillis() - startTime;
+            log.info("=================================================");
+            log.info("SUCCEEDED TEST: {} in {} ms", description.getMethodName(), elapsed);
+            log.info("=================================================");
         }
 
         @Override
         protected void failed(Throwable e, Description description) {
-            log.error("==> Test failed: {}.{}", description.getClassName(), description.getMethodName(), e);
+            long elapsed = System.currentTimeMillis() - startTime;
+            log.info("=================================================");
+            log.info("FAILED TEST: {} in {} ms", description.getMethodName(), elapsed, e);
+            log.info("=================================================");
         }
     };
 
@@ -263,6 +277,17 @@ public abstract class AbstractContainerTest {
                 .pollInterval(2, TimeUnit.SECONDS)
                 .atMost(30, TimeUnit.SECONDS)
                 .until(() -> getAgentApplicationById(appId).isEmpty());
+    }
+
+    protected AgentBulkAction awaitBulkActionCompleted(UUID bulkActionId) {
+        Awaitility.await("bulk action completed " + bulkActionId)
+                .pollInterval(1, TimeUnit.SECONDS)
+                .atMost(60, TimeUnit.SECONDS)
+                .until(() -> {
+                    AgentBulkAction action = cloudRestClient.getAgentBulkAction(bulkActionId);
+                    return action != null && action.getStatus() != AgentBulkActionStatus.IN_PROGRESS;
+                });
+        return cloudRestClient.getAgentBulkAction(bulkActionId);
     }
 
     protected Optional<JsonNode> getComposeTemplateByName(AgentAppTemplate template, String composeTemplate) {

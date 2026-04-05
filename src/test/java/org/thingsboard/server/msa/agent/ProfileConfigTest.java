@@ -16,7 +16,9 @@
 package org.thingsboard.server.msa.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import lombok.extern.slf4j.Slf4j;
+import org.awaitility.Awaitility;
 import org.junit.Assert;
 import org.junit.Test;
 import org.thingsboard.server.common.data.agent.AgentAppEventActionType;
@@ -24,9 +26,10 @@ import org.thingsboard.server.common.data.agent.AgentAppEventRequest;
 import org.thingsboard.server.common.data.agent.AgentAppProfile;
 import org.thingsboard.server.common.data.agent.AgentApplication;
 import org.thingsboard.server.common.data.agent.AgentApplicationType;
+import org.thingsboard.server.common.data.agent.AgentBulkAction;
+import org.thingsboard.server.common.data.agent.AgentBulkActionStatus;
 import org.thingsboard.server.common.data.agent.AgentGroup;
 import org.thingsboard.server.common.data.agent.BulkOperationRequest;
-import org.thingsboard.server.common.data.agent.BulkOperationResult;
 import org.thingsboard.server.common.data.agent.config.DockerComposeConfig;
 import org.thingsboard.server.common.data.agent.template.AgentAppTemplate;
 import org.thingsboard.server.common.data.id.AgentAppProfileId;
@@ -64,6 +67,8 @@ public class ProfileConfigTest extends AbstractContainerTest {
         AgentAppProfileId profileId = profile.getId();
         log.info("Created profile: {}", profileId);
 
+        AgentApplication installed = null;
+        String projectName = null;
         try {
             // Install app with profileId — should inherit profile's config
             AgentApplication app = AgentApplication.fromTemplate(template);
@@ -75,10 +80,11 @@ public class ProfileConfigTest extends AbstractContainerTest {
             AgentAppEventRequest request = new AgentAppEventRequest();
             request.setActionType(AgentAppEventActionType.INSTALL);
             request.setApplication(app);
-            AgentApplication installed = cloudRestClient.installAgentApp(request);
+            installed = cloudRestClient.installAgentApp(request);
 
             Assert.assertNotNull("Installed app should have an ID", installed.getId());
             awaitEventFinished(installed.getId());
+            projectName = getProjectName(installed.getId());
 
             // Verify the app got the profile's config
             AgentApplication fetched = getAgentApplicationById(installed.getId())
@@ -89,14 +95,13 @@ public class ProfileConfigTest extends AbstractContainerTest {
             Assert.assertNotNull("Compose should not be null", appConfig.getCompose());
 
             // Verify containers are running
-            String projectName = getProjectName(installed.getId());
             awaitContainersRunning(projectName, 1);
-
-            // Cleanup
-            createAppEvent(installed.getId(), AgentAppEventActionType.DELETE);
-            awaitApplicationRemoved(installed.getId(), projectName);
-            awaitContainersRemoved(projectName);
         } finally {
+            if (installed != null) {
+                createAppEvent(installed.getId(), AgentAppEventActionType.DELETE);
+                awaitApplicationRemoved(installed.getId(), projectName);
+                awaitContainersRemoved(projectName);
+            }
             cloudRestClient.deleteAgentAppProfile(profileId);
         }
     }
@@ -132,6 +137,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
         log.info("Created profile: {}, group: {}", profileId, groupId);
 
         AgentApplication installed = null;
+        String projectName = null;
         try {
             // Install app with profileId
             AgentApplication app = AgentApplication.fromTemplate(template);
@@ -144,19 +150,25 @@ public class ProfileConfigTest extends AbstractContainerTest {
             installRequest.setApplication(app);
             installed = cloudRestClient.installAgentApp(installRequest);
             awaitEventFinished(installed.getId());
-
-            String projectName = getProjectName(installed.getId());
+            projectName = getProjectName(installed.getId());
             awaitContainersRunning(projectName, 1);
 
             // Now run bulk UPDATE — should push profile config to the app
             BulkOperationRequest bulkRequest = new BulkOperationRequest();
             bulkRequest.setActionType(AgentAppEventActionType.UPDATE);
 
-            BulkOperationResult result = cloudRestClient.bulkOperation(groupId, profileId, bulkRequest, false);
-            Assert.assertNotNull("Bulk result should not be null", result);
-            Assert.assertEquals("Should have 1 total app", 1, result.getTotal().get());
-            Assert.assertEquals("Should have 1 submitted app", 1, result.getSubmitted().get());
-            Assert.assertTrue("Should have no skipped apps", result.getSkipped().isEmpty());
+            AgentBulkAction bulkAction = cloudRestClient.bulkOperation(groupId, profileId, bulkRequest, false);
+            Assert.assertNotNull("Bulk action should not be null", bulkAction);
+            Assert.assertNotNull("Bulk action should have an ID", bulkAction.getId());
+            Assert.assertEquals("Bulk action should be QUEUED initially",
+                    AgentBulkActionStatus.QUEUED, bulkAction.getStatus());
+
+            AgentBulkAction completed = awaitBulkActionCompleted(bulkAction.getId().getId());
+            Assert.assertEquals("Bulk action should be COMPLETED", AgentBulkActionStatus.COMPLETED, completed.getStatus());
+            Assert.assertEquals("Should have 1 total app", 1, completed.getTotal());
+            Assert.assertEquals("Should have 1 submitted app", 1, completed.getSubmitted());
+            Assert.assertTrue("Should have no skip counts",
+                    completed.getSkipCounts() == null || completed.getSkipCounts().isEmpty());
 
             // Wait for all events (install + bulk update) to finish
             awaitAllEventsFinished(installed.getId());
@@ -164,12 +176,15 @@ public class ProfileConfigTest extends AbstractContainerTest {
             // Verify containers are still running after update
             Assert.assertTrue("Container should still be running after bulk update",
                     dockerVerifier.countRunningContainers(projectName) >= 1);
-
-            // Cleanup
-            createAppEvent(installed.getId(), AgentAppEventActionType.DELETE);
-            awaitApplicationRemoved(installed.getId(), projectName);
-            awaitContainersRemoved(projectName);
         } finally {
+            if (installed != null) {
+                // Wait for any in-flight events (e.g. bulk UPDATE) to finish before sending DELETE
+                awaitAllEventsFinished(installed.getId());
+                createAppEvent(installed.getId(), AgentAppEventActionType.DELETE);
+                awaitApplicationRemoved(installed.getId(), projectName);
+                awaitContainersRemoved(projectName);
+            }
+
             // Unassign agent from group
             agent.setAgentGroupId(null);
             agent = cloudRestClient.saveAgent(agent);
@@ -199,6 +214,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
         AgentAppProfileId profileId = profile.getId();
 
         AgentApplication installed = null;
+        String projectName = null;
         try {
             // Install app with profileId
             AgentApplication app = AgentApplication.fromTemplate(template);
@@ -211,28 +227,23 @@ public class ProfileConfigTest extends AbstractContainerTest {
             installRequest.setApplication(app);
             installed = cloudRestClient.installAgentApp(installRequest);
             awaitEventFinished(installed.getId());
+            projectName = getProjectName(installed.getId());
 
             // Try to update config directly — should fail
             AgentApplication fetched = getAgentApplicationById(installed.getId())
                     .orElseThrow(() -> new AssertionError("App not found"));
 
             DockerComposeConfig newConfig = new DockerComposeConfig();
-            newConfig.setCompose(compose.get());
+            newConfig.setCompose(JsonNodeFactory.instance.objectNode()); // different from profile's compose
             fetched.setConfig(newConfig);
 
-            try {
-                cloudRestClient.updateAgentApplication(fetched);
-                Assert.fail("Should have thrown an error when updating config on profile-managed app");
-            } catch (Exception e) {
-                log.info("Expected error when updating config on profile-managed app: {}", e.getMessage());
-            }
-
-            // Cleanup
-            String projectName = getProjectName(installed.getId());
-            createAppEvent(installed.getId(), AgentAppEventActionType.DELETE);
-            awaitApplicationRemoved(installed.getId(), projectName);
-            awaitContainersRemoved(projectName);
+            Assert.assertThrows(Exception.class, () -> cloudRestClient.updateAgentApplication(fetched));
         } finally {
+            if (installed != null) {
+                createAppEvent(installed.getId(), AgentAppEventActionType.DELETE);
+                awaitApplicationRemoved(installed.getId(), projectName);
+                awaitContainersRemoved(projectName);
+            }
             cloudRestClient.deleteAgentAppProfile(profileId);
         }
     }

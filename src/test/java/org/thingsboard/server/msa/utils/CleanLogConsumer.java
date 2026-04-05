@@ -21,10 +21,12 @@ import org.testcontainers.containers.output.Slf4jLogConsumer;
 
 public class CleanLogConsumer extends Slf4jLogConsumer {
 
+    private final Logger logger;
     private final String prefix;
 
     public CleanLogConsumer(Logger logger, String prefix) {
         super(logger);
+        this.logger = logger;
         this.prefix = prefix;
     }
 
@@ -32,7 +34,8 @@ public class CleanLogConsumer extends Slf4jLogConsumer {
     public void accept(OutputFrame outputFrame) {
         String utf8String = outputFrame.getUtf8StringWithoutLineEnding();
         if (utf8String != null && !utf8String.isBlank()) {
-            super.accept(outputFrame);
+            String type = outputFrame.getType() == OutputFrame.OutputType.STDERR ? "STDERR" : "STDOUT";
+            logger.info("[{}] {}: {}", prefix, type, utf8String);
         }
     }
 }
