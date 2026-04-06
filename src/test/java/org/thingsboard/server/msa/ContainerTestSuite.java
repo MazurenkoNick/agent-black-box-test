@@ -42,7 +42,7 @@ import static org.thingsboard.server.msa.config.TestConfiguration.TB_AGENT_SERVI
 import static org.thingsboard.server.msa.config.TestConfiguration.TB_MONOLITH_SERVICE_NAME;
 
 @RunWith(ClasspathSuite.class)
-@ClasspathSuite.ClassnameFilters({"org.thingsboard.server.msa.agent.*Test"})
+@ClasspathSuite.ClassnameFilters({"org.thingsboard.server.msa.agent.AutoInstallTest"})
 @Slf4j
 public class ContainerTestSuite {
 

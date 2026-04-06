@@ -1,0 +1,66 @@
+{
+  "config": {
+    "type": "DOCKER_COMPOSE"
+  },
+  "startSteps": [
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440000",
+      "nextId": "660e8400-e29b-41d4-a716-446655440001",
+      "title": "Choose Installation Type",
+      "type": "COMPOSE_TEMPLATE",
+      "templateOnly": true,
+      "composeTemplates": {
+        "default": "compose/gateway/3.8-stable/default.yml"
+      }
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "title": "Process Compose Configuration",
+      "type": "COMPOSE",
+      "templateOnly": false,
+      "defaultState": {
+        "pullImages": true
+      }
+    }
+  ],
+  "deleteSteps": [
+    {
+      "id": "670e8400-e29b-41d4-a716-446655440001",
+      "title": "Remove Application",
+      "type": "COMPOSE_DOWN",
+      "templateOnly": false,
+      "defaultState": {
+        "removeVolumes": false
+      }
+    }
+  ],
+  "upgradeSteps": [
+    {
+      "id": "690e8400-e29b-41d4-a716-446655440000",
+      "nextId": "690e8400-e29b-41d4-a716-446655440001",
+      "title": "Back Up Volumes",
+      "type": "BACKUP_VOLUME",
+      "templateOnly": false
+    },
+    {
+      "id": "690e8400-e29b-41d4-a716-446655440001",
+      "title": "Process Compose Configuration",
+      "type": "COMPOSE_MIGRATION",
+      "templateOnly": false,
+      "defaultState": {
+        "pullImages": true
+      }
+    }
+  ],
+  "rollbackSteps": [
+    {
+      "id": "680e8400-e29b-41d4-a716-446655440001",
+      "type": "ROLLBACK",
+      "title": "Rollback Application",
+      "templateOnly": false,
+      "defaultState": {
+        "failedEventId": null
+      }
+    }
+  ]
+}
