@@ -29,6 +29,7 @@ import org.thingsboard.server.common.data.agent.AgentApplicationType;
 import org.thingsboard.server.common.data.agent.AgentBulkAction;
 import org.thingsboard.server.common.data.agent.AgentBulkActionStatus;
 import org.thingsboard.server.common.data.agent.AgentGroup;
+import org.thingsboard.server.common.data.agent.AgentProvisionType;
 import org.thingsboard.server.common.data.agent.BulkOperationRequest;
 import org.thingsboard.server.common.data.agent.config.DockerComposeConfig;
 import org.thingsboard.server.common.data.agent.template.AgentAppTemplate;
@@ -126,6 +127,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
         // Create group and assign profile
         AgentGroup group = new AgentGroup();
         group.setName("bulk-group-" + System.currentTimeMillis());
+        group.setProvisionType(AgentProvisionType.DISABLED);
         group = cloudRestClient.saveAgentGroup(group);
         AgentGroupId groupId = group.getId();
         cloudRestClient.assignProfileToGroup(groupId, profileId);
