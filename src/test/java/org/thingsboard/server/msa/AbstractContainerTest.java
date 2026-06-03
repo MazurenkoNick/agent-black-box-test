@@ -310,7 +310,7 @@ public abstract class AbstractContainerTest {
         if (events == null || events.getData().isEmpty()) {
             return null;
         }
-        return events.getData().getFirst()
+        return events.getData().getFirst();
     }
 
     protected void awaitAllEventsFinished(AgentApplicationId appId) {
