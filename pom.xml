@@ -20,7 +20,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>org.thingsboard</groupId>
-    <version>4.3.0-RC</version>
+    <version>4.4.0PE-SNAPSHOT</version>
     <artifactId>agent-black-box-tests</artifactId>
 
     <name>ThingsBoard Agent Black Box Tests</name>

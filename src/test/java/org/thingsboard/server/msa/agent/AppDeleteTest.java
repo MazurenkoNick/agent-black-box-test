@@ -33,20 +33,26 @@ public class AppDeleteTest extends AbstractContainerTest {
     public void testDeleteRemovesContainersFromDind() {
         AgentAppTemplate template = getLatestGenericTemplate();
         Optional<JsonNode> compose = getComposeTemplateByName(template, "default");
-        AgentApplication app = installDockerComposeApp(template, compose.get());
-        awaitEventFinished(app.getId());
+        AgentApplication app = null;
+        String projectName = null;
+        try {
+            app = installDockerComposeApp(template, compose.get());
+            awaitEventFinished(app.getId());
 
-        String projectName = getProjectName(app.getId());
-        awaitContainersRunning(projectName, 1);
-        Assert.assertTrue("Container should be running before delete", dockerVerifier.countRunningContainers(projectName) >= 1);
+            projectName = getProjectName(app.getId());
+            awaitContainersRunning(projectName, 1);
+            Assert.assertTrue("Container should be running before delete", dockerVerifier.countRunningContainers(projectName) >= 1);
 
-        // Delete the app
-        createAppEvent(app.getId(), AgentAppEventActionType.DELETE);
+            // Delete the app
+            createAppEvent(app.getId(), AgentAppEventActionType.DELETE);
 
-        awaitApplicationRemoved(app.getId(), projectName);
+            awaitApplicationRemoved(app.getId(), projectName);
 
-        // Verify containers removed from DinD
-        awaitContainersRemoved(projectName);
-        Assert.assertFalse("No containers should remain after delete", dockerVerifier.projectExists(projectName));
+            // Verify containers removed from DinD
+            awaitContainersRemoved(projectName);
+            Assert.assertFalse("No containers should remain after delete", dockerVerifier.projectExists(projectName));
+        } finally {
+            deleteAppQuietly(app, projectName);
+        }
     }
 }

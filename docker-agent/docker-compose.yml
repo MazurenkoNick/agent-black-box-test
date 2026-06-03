@@ -21,10 +21,7 @@ services:
       TB_QUEUE_TYPE: "kafka"
       TB_KAFKA_SERVERS: "kafka:9092"
       AGENT_APP_TEMPLATE_SYNC_ENABLED: "true"
-      AGENT_APP_TEMPLATE_SYNC_REPO_URI: "file:///agent-templates"
-      AGENT_APP_TEMPLATE_SYNC_BRANCH: "main"
-      AGENT_APP_TEMPLATE_SYNC_BASE_PATH: "templates"
-      AGENT_APP_TEMPLATE_SYNC_FETCH_FREQUENCY_MS: "5000"
+      AGENT_APP_TEMPLATE_SYNC_REPO_URI: "https://github.com/MazurenkoNick/agent-app-templates.git"
     env_file:
       - ./tb-node.env
     volumes:

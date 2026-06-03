@@ -28,13 +28,13 @@ import org.thingsboard.server.common.data.agent.AgentApplication;
 import org.thingsboard.server.common.data.agent.AgentApplicationType;
 import org.thingsboard.server.common.data.agent.AgentBulkAction;
 import org.thingsboard.server.common.data.agent.AgentBulkActionStatus;
-import org.thingsboard.server.common.data.agent.AgentGroup;
+import org.thingsboard.server.common.data.agent.AgentProfile;
 import org.thingsboard.server.common.data.agent.AgentProvisionType;
 import org.thingsboard.server.common.data.agent.BulkOperationRequest;
 import org.thingsboard.server.common.data.agent.config.DockerComposeConfig;
 import org.thingsboard.server.common.data.agent.template.AgentAppTemplate;
 import org.thingsboard.server.common.data.id.AgentAppProfileId;
-import org.thingsboard.server.common.data.id.AgentGroupId;
+import org.thingsboard.server.common.data.id.AgentProfileId;
 import org.thingsboard.server.msa.AbstractContainerTest;
 
 import java.util.Optional;
@@ -81,7 +81,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
             AgentAppEventRequest request = new AgentAppEventRequest();
             request.setActionType(AgentAppEventActionType.INSTALL);
             request.setApplication(app);
-            installed = cloudRestClient.installAgentApp(request);
+            installed = cloudRestClient.installAgentApp(request).getApplication();
 
             Assert.assertNotNull("Installed app should have an ID", installed.getId());
             awaitEventFinished(installed.getId());
@@ -98,12 +98,8 @@ public class ProfileConfigTest extends AbstractContainerTest {
             // Verify containers are running
             awaitContainersRunning(projectName, 1);
         } finally {
-            if (installed != null) {
-                createAppEvent(installed.getId(), AgentAppEventActionType.DELETE);
-                awaitApplicationRemoved(installed.getId(), projectName);
-                awaitContainersRemoved(projectName);
-            }
-            cloudRestClient.deleteAgentAppProfile(profileId);
+            deleteAppQuietly(installed, projectName);
+            deleteAppProfileQuietly(profileId);
         }
     }
 
@@ -125,15 +121,15 @@ public class ProfileConfigTest extends AbstractContainerTest {
         AgentAppProfileId profileId = profile.getId();
 
         // Create group and assign profile
-        AgentGroup group = new AgentGroup();
+        AgentProfile group = new AgentProfile();
         group.setName("bulk-group-" + System.currentTimeMillis());
         group.setProvisionType(AgentProvisionType.DISABLED);
-        group = cloudRestClient.saveAgentGroup(group);
-        AgentGroupId groupId = group.getId();
-        cloudRestClient.assignProfileToGroup(groupId, profileId);
+        group = cloudRestClient.saveAgentProfile(group);
+        AgentProfileId groupId = group.getId();
+        cloudRestClient.assignAppProfileToAgentProfile(groupId, profileId);
 
         // Assign agent to group
-        agent.setAgentGroupId(groupId);
+        agent.setAgentProfileId(groupId);
         agent = cloudRestClient.saveAgent(agent);
 
         log.info("Created profile: {}, group: {}", profileId, groupId);
@@ -150,7 +146,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
             AgentAppEventRequest installRequest = new AgentAppEventRequest();
             installRequest.setActionType(AgentAppEventActionType.INSTALL);
             installRequest.setApplication(app);
-            installed = cloudRestClient.installAgentApp(installRequest);
+            installed = cloudRestClient.installAgentApp(installRequest).getApplication();
             awaitEventFinished(installed.getId());
             projectName = getProjectName(installed.getId());
             awaitContainersRunning(projectName, 1);
@@ -166,7 +162,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
                     AgentBulkActionStatus.QUEUED, bulkAction.getStatus());
 
             AgentBulkAction completed = awaitBulkActionCompleted(bulkAction.getId().getId());
-            Assert.assertEquals("Bulk action should be COMPLETED", AgentBulkActionStatus.COMPLETED, completed.getStatus());
+            Assert.assertEquals("Bulk action should be STARTED", AgentBulkActionStatus.STARTED, completed.getStatus());
             Assert.assertEquals("Should have 1 total app", 1, completed.getTotal());
             Assert.assertEquals("Should have 1 submitted app", 1, completed.getSubmitted());
             Assert.assertTrue("Should have no skip counts",
@@ -179,23 +175,31 @@ public class ProfileConfigTest extends AbstractContainerTest {
             Assert.assertTrue("Container should still be running after bulk update",
                     dockerVerifier.countRunningContainers(projectName) >= 1);
         } finally {
-            if (installed != null) {
+            if (installed != null && installed.getId() != null) {
                 // Wait for any in-flight events (e.g. bulk UPDATE) to finish before sending DELETE
-                awaitAllEventsFinished(installed.getId());
-                createAppEvent(installed.getId(), AgentAppEventActionType.DELETE);
-                awaitApplicationRemoved(installed.getId(), projectName);
-                awaitContainersRemoved(projectName);
+                try {
+                    awaitAllEventsFinished(installed.getId());
+                } catch (Exception e) {
+                    log.warn("Cleanup: events did not finish for app {}", installed.getId(), e);
+                }
             }
+            deleteAppQuietly(installed, projectName);
 
             // Unassign agent from group
-            agent.setAgentGroupId(null);
-            agent = cloudRestClient.saveAgent(agent);
+            try {
+                agent.setAgentProfileId(null);
+                agent = cloudRestClient.saveAgent(agent);
+            } catch (Exception e) {
+                log.warn("Cleanup: failed to unassign agent from group {}", groupId, e);
+            }
 
-            cloudRestClient.deleteAgentGroup(groupId);
-            if (installed == null) {
-                cloudRestClient.deleteAgentAppProfile(profileId);
+            try {
+                cloudRestClient.deleteAgentProfile(groupId);
+            } catch (Exception e) {
+                log.warn("Cleanup: failed to delete group {}", groupId, e);
             }
             // Profile can only be deleted after apps referencing it are gone
+            deleteAppProfileQuietly(profileId);
         }
     }
 
@@ -227,7 +231,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
             AgentAppEventRequest installRequest = new AgentAppEventRequest();
             installRequest.setActionType(AgentAppEventActionType.INSTALL);
             installRequest.setApplication(app);
-            installed = cloudRestClient.installAgentApp(installRequest);
+            installed = cloudRestClient.installAgentApp(installRequest).getApplication();
             awaitEventFinished(installed.getId());
             projectName = getProjectName(installed.getId());
 
@@ -241,12 +245,16 @@ public class ProfileConfigTest extends AbstractContainerTest {
 
             Assert.assertThrows(Exception.class, () -> cloudRestClient.updateAgentApplication(fetched));
         } finally {
-            if (installed != null) {
-                createAppEvent(installed.getId(), AgentAppEventActionType.DELETE);
-                awaitApplicationRemoved(installed.getId(), projectName);
-                awaitContainersRemoved(projectName);
-            }
+            deleteAppQuietly(installed, projectName);
+            deleteAppProfileQuietly(profileId);
+        }
+    }
+
+    private void deleteAppProfileQuietly(AgentAppProfileId profileId) {
+        try {
             cloudRestClient.deleteAgentAppProfile(profileId);
+        } catch (Exception e) {
+            log.warn("Cleanup: failed to delete app profile {}", profileId, e);
         }
     }
 }

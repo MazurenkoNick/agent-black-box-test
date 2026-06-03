@@ -75,7 +75,7 @@ public class DockerComposeExecutor {
         final Stream<String> absoluteDockerComposeFilePaths = composeFiles.stream().map(File::getAbsolutePath).map(Objects::toString);
         final String composeFileEnvVariableValue = absoluteDockerComposeFilePaths.collect(joining(File.pathSeparator + ""));
         log.debug("Set env COMPOSE_FILE={}", composeFileEnvVariableValue);
-        final File pwd = composeFiles.get(0).getAbsoluteFile().getParentFile().getAbsoluteFile();
+        final File pwd = composeFiles.getFirst().getAbsoluteFile().getParentFile().getAbsoluteFile();
         environment.put(ENV_COMPOSE_FILE, composeFileEnvVariableValue);
         log.info("Local Docker Compose is running command: {}", cmd);
         final List<String> command = Splitter.onPattern(" ").omitEmptyStrings().splitToList(COMPOSE_EXECUTABLE + " " + cmd);
@@ -93,7 +93,7 @@ public class DockerComposeExecutor {
         if (!CommandLine.executableExists(DOCKER_EXECUTABLE)) {
             throw new ContainerLaunchException("Local Docker not found. Is " + DOCKER_EXECUTABLE + " on the PATH?");
         }
-        final File pwd = composeFiles.get(0).getAbsoluteFile().getParentFile().getAbsoluteFile();
+        final File pwd = composeFiles.getFirst().getAbsoluteFile().getParentFile().getAbsoluteFile();
         log.info("Local Docker is running command: {}", cmd);
         final List<String> command = Splitter.onPattern(" ").omitEmptyStrings().splitToList(DOCKER_EXECUTABLE + " " + cmd);
         try {

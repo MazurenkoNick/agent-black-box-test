@@ -71,7 +71,7 @@ public class ThingsBoardDbInstaller extends ExternalResource {
 
     @Override
     protected void before() throws Throwable {
-        initAgentTemplatesGitRepo();
+//        initAgentTemplatesGitRepo();
 
         dockerCompose.withCommand("volume create " + postgresDataVolume);
         dockerCompose.invokeDocker();
@@ -111,26 +111,26 @@ public class ThingsBoardDbInstaller extends ExternalResource {
      * Initializes the agent-templates directory as a git repository so that
      * AgentAppTemplateSyncService can read it via file:///agent-templates URI.
      */
-    private void initAgentTemplatesGitRepo() {
-        File templatesDir = new File(DOCKER_SOURCE_DIR + "agent-templates");
-        if (!templatesDir.exists()) {
-            log.warn("agent-templates directory not found: {}", templatesDir.getAbsolutePath());
-            return;
-        }
-        File gitDir = new File(templatesDir, ".git");
-        if (gitDir.exists()) {
-            log.info("agent-templates git repo already initialized, re-committing changes");
-            runGitCommand(templatesDir, "add", "-A");
-            runGitCommandOptional(templatesDir, "commit", "--allow-empty", "-m", "update templates");
-        } else {
-            log.info("Initializing agent-templates as git repo at {}", templatesDir.getAbsolutePath());
-            runGitCommand(templatesDir, "init", "-b", "main");
-            runGitCommand(templatesDir, "config", "user.email", "test@thingsboard.io");
-            runGitCommand(templatesDir, "config", "user.name", "TB Test");
-            runGitCommand(templatesDir, "add", "-A");
-            runGitCommand(templatesDir, "commit", "-m", "init agent templates");
-        }
-    }
+//    private void initAgentTemplatesGitRepo() {
+//        File templatesDir = new File(DOCKER_SOURCE_DIR + "agent-templates");
+//        if (!templatesDir.exists()) {
+//            log.warn("agent-templates directory not found: {}", templatesDir.getAbsolutePath());
+//            return;
+//        }
+//        File gitDir = new File(templatesDir, ".git");
+//        if (gitDir.exists()) {
+//            log.info("agent-templates git repo already initialized, re-committing changes");
+//            runGitCommand(templatesDir, "add", "-A");
+//            runGitCommandOptional(templatesDir, "commit", "--allow-empty", "-m", "update templates");
+//        } else {
+//            log.info("Initializing agent-templates as git repo at {}", templatesDir.getAbsolutePath());
+//            runGitCommand(templatesDir, "init", "-b", "main");
+//            runGitCommand(templatesDir, "config", "user.email", "test@thingsboard.io");
+//            runGitCommand(templatesDir, "config", "user.name", "TB Test");
+//            runGitCommand(templatesDir, "add", "-A");
+//            runGitCommand(templatesDir, "commit", "-m", "init agent templates");
+//        }
+//    }
 
     private void runGitCommand(File directory, String... args) {
         try {

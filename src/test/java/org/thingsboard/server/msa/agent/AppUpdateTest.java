@@ -16,11 +16,13 @@
 package org.thingsboard.server.msa.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Assert;
 import org.junit.Test;
 import org.thingsboard.server.common.data.agent.AgentAppEventActionType;
 import org.thingsboard.server.common.data.agent.AgentApplication;
+import org.thingsboard.server.common.data.agent.config.DockerComposeConfig;
 import org.thingsboard.server.common.data.agent.template.AgentAppTemplate;
 import org.thingsboard.server.msa.AbstractContainerTest;
 
@@ -34,29 +36,46 @@ public class AppUpdateTest extends AbstractContainerTest {
         // Install with 1.0.0 (nginx:alpine)
         AgentAppTemplate template100 = getGenericTemplate("1.0.0");
         Optional<JsonNode> compose = getComposeTemplateByName(template100, "default");
-        AgentApplication app = installDockerComposeApp(template100, compose.get());
-        awaitEventFinished(app.getId());
+        AgentApplication app = null;
+        String projectName = null;
+        try {
+            app = installDockerComposeApp(template100, compose.get());
+            awaitEventFinished(app.getId());
 
-        String projectName = getProjectName(app.getId());
-        awaitContainersRunning(projectName, 1);
-        Assert.assertTrue("Container with nginx:alpine should be running",
-                dockerVerifier.hasRunningContainerWithImage(projectName, "nginx:alpine"));
+            projectName = getProjectName(app.getId());
+            awaitContainersRunning(projectName, 1);
+            Assert.assertTrue("Container with nginx:alpine should be running",
+                    dockerVerifier.hasRunningContainerWithImage(projectName, "nginx:alpine"));
 
-        // Update app (UPDATE action reuses existing app with potentially new config)
-        createAppEvent(app.getId(), AgentAppEventActionType.UPDATE);
-        awaitEventFinished(app.getId());
+            // Update compose image and trigger UPDATE: nginx:alpine -> nginx:stable-alpine
+            AgentApplication appForUpdate = cloudRestClient.getAgentApplicationById(app.getId())
+                    .orElseThrow(() -> new AssertionError("App not found"));
+            DockerComposeConfig config = (DockerComposeConfig) appForUpdate.getConfig();
+            JsonNode composeNode = config.getCompose();
+            ObjectNode helloService = (ObjectNode) composeNode.get("services").get("hello");
+            helloService.put("image", "nginx:stable-alpine");
+            config.setCompose(composeNode);
+            cloudRestClient.updateAgentApplication(appForUpdate);
 
-        // Container should still be running after update
-        awaitContainersRunning(projectName, 1);
-        Assert.assertTrue("Container should still be running after update",
-                dockerVerifier.countRunningContainers(projectName) >= 1);
+            createAppEvent(app.getId(), AgentAppEventActionType.UPDATE);
+            awaitEventFinished(app.getId());
 
-        // Cleanup
-        createAppEvent(app.getId(), AgentAppEventActionType.DELETE);
-        awaitApplicationRemoved(app.getId(), projectName);
+            // Container with updated image should be running
+            awaitContainersRunning(projectName, 1);
+            Assert.assertTrue("Container with nginx:stable-alpine should be running after update",
+                    dockerVerifier.hasRunningContainerWithImage(projectName, "nginx:stable-alpine"));
+            Assert.assertFalse("Old nginx:alpine container should no longer be running",
+                    dockerVerifier.hasRunningContainerWithImage(projectName, "nginx:alpine"));
 
-        // Verify containers removed from DinD
-        awaitContainersRemoved(projectName);
-        Assert.assertFalse("No containers should remain after delete", dockerVerifier.projectExists(projectName));
+            // Cleanup (verified as part of the test)
+            createAppEvent(app.getId(), AgentAppEventActionType.DELETE);
+            awaitApplicationRemoved(app.getId(), projectName);
+
+            // Verify containers removed from DinD
+            awaitContainersRemoved(projectName);
+            Assert.assertFalse("No containers should remain after delete", dockerVerifier.projectExists(projectName));
+        } finally {
+            deleteAppQuietly(app, projectName);
+        }
     }
 }

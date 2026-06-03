@@ -34,17 +34,19 @@ import org.thingsboard.server.common.data.agent.AgentAppProfile;
 import org.thingsboard.server.common.data.agent.AgentApplication;
 import org.thingsboard.server.common.data.agent.AgentApplicationOrigin;
 import org.thingsboard.server.common.data.agent.AgentApplicationType;
-import org.thingsboard.server.common.data.agent.AgentGroup;
+import org.thingsboard.server.common.data.agent.AgentProfile;
 import org.thingsboard.server.common.data.agent.AgentProvisionType;
 import org.thingsboard.server.common.data.agent.config.AgentAppConfigType;
 import org.thingsboard.server.common.data.agent.config.DockerComposeConfig;
 import org.thingsboard.server.common.data.agent.template.AgentAppTemplate;
 import org.thingsboard.server.common.data.device.credentials.BasicMqttCredentials;
 import org.thingsboard.server.common.data.id.AgentAppProfileId;
-import org.thingsboard.server.common.data.id.AgentGroupId;
+import org.thingsboard.server.common.data.id.AgentProfileId;
 import org.thingsboard.server.common.data.id.AgentId;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.page.PageLink;
+import org.thingsboard.server.common.data.relation.EntityRelation;
+import org.thingsboard.server.common.data.relation.RelationTypeGroup;
 import org.thingsboard.server.common.data.security.DeviceCredentials;
 import org.thingsboard.server.common.data.security.DeviceCredentialsType;
 import org.thingsboard.server.msa.AbstractContainerTest;
@@ -75,7 +77,7 @@ public class AutoInstallTest extends AbstractContainerTest {
 
     private final List<String> containerIds = new ArrayList<>();
     private final List<String> volumeNames = new ArrayList<>();
-    private final List<AgentGroupId> groupIds = new ArrayList<>();
+    private final List<AgentProfileId> groupIds = new ArrayList<>();
     private final List<AgentAppProfileId> profileIds = new ArrayList<>();
     private final List<AgentId> provisionedAgentIds = new ArrayList<>();
     private final List<DeviceId> createdDeviceIds = new ArrayList<>();
@@ -95,6 +97,11 @@ public class AutoInstallTest extends AbstractContainerTest {
                 .orElseThrow(() -> new IllegalStateException(TB_AGENT_SERVICE_NAME + " not running"));
         var agentInspection = dockerClient.inspectContainerCmd(agentContainer.getContainerId()).exec();
         agentImage = agentInspection.getConfig().getImage();
+
+        // Remove containers left over from earlier tests. When an agent connects,
+        // it picks up every compose project it finds in DinD, and such leftover
+        // apps can break the auto-install checks in these tests.
+        dockerVerifier.removeAllComposeProjects();
 
         log.info("AutoInstall test context: network={}, agentImage={}", networkName, agentImage);
     }
@@ -117,8 +124,8 @@ public class AutoInstallTest extends AbstractContainerTest {
         }
         provisionedAgentIds.clear();
 
-        for (AgentGroupId groupId : groupIds) {
-            try { cloudRestClient.deleteAgentGroup(groupId); } catch (Exception ignored) {}
+        for (AgentProfileId groupId : groupIds) {
+            try { cloudRestClient.deleteAgentProfile(groupId); } catch (Exception ignored) {}
         }
         groupIds.clear();
 
@@ -131,6 +138,11 @@ public class AutoInstallTest extends AbstractContainerTest {
             try { cloudRestClient.deleteDevice(deviceId); } catch (Exception ignored) {}
         }
         createdDeviceIds.clear();
+
+        // Auto-installed apps keep running in DinD after their agent is deleted,
+        // and nothing is left to remove them. Their fixed host port (8080) would
+        // block installs in the test classes that run after this one.
+        dockerVerifier.removeAllComposeProjects();
     }
 
     // -------------------------------------------------------------------------
@@ -145,8 +157,8 @@ public class AutoInstallTest extends AbstractContainerTest {
 
         AgentAppProfile profile = createProfile("auto-generic",
                 AgentApplicationType.GENERIC, template, compose.get());
-        AgentGroup group = createProvisionGroup();
-        cloudRestClient.assignProfileToGroup(group.getId(), profile.getId());
+        AgentProfile group = createProvisionGroup();
+        cloudRestClient.assignAppProfileToAgentProfile(group.getId(), profile.getId());
 
         Agent provisioned = provisionAndConnect(group);
 
@@ -169,17 +181,18 @@ public class AutoInstallTest extends AbstractContainerTest {
 
         AgentAppProfile profile = createProfile("auto-gw-token",
                 AgentApplicationType.GATEWAY, template, compose);
-        AgentGroup group = createProvisionGroup();
-        cloudRestClient.assignProfileToGroup(group.getId(), profile.getId());
+        AgentProfile group = createProvisionGroup();
+        cloudRestClient.assignAppProfileToAgentProfile(group.getId(), profile.getId());
 
         Agent provisioned = provisionAndConnect(group);
 
         AgentApplication app = awaitAutoInstalledApp(provisioned.getId(), profile.getId());
         Assert.assertEquals(AgentApplicationOrigin.AUTO_PROVISIONED, app.getOrigin());
         Assert.assertEquals(AgentApplicationType.GATEWAY, app.getAppType());
-        Assert.assertNotNull("GATEWAY app should have a related entity", app.getRelatedEntityId());
+        List<EntityRelation> managedByAgent = cloudRestClient.findByTo(app.getId(), EntityRelation.MANAGED_BY_AGENT_APP_TYPE, RelationTypeGroup.AGENT);
+        Assert.assertEquals("GATEWAY app should have a related entity", 1, managedByAgent.size());
 
-        DeviceId deviceId = new DeviceId(app.getRelatedEntityId().getId());
+        DeviceId deviceId = new DeviceId(managedByAgent.getFirst().getFrom().getId());
         createdDeviceIds.add(deviceId);
 
         Device device = cloudRestClient.getDeviceById(deviceId)
@@ -200,17 +213,17 @@ public class AutoInstallTest extends AbstractContainerTest {
 
         AgentAppProfile profile = createProfile("auto-gw-mqtt",
                 AgentApplicationType.GATEWAY, template, compose);
-        AgentGroup group = createProvisionGroup();
-        cloudRestClient.assignProfileToGroup(group.getId(), profile.getId());
+        AgentProfile group = createProvisionGroup();
+        cloudRestClient.assignAppProfileToAgentProfile(group.getId(), profile.getId());
 
         Agent provisioned = provisionAndConnect(group);
 
         AgentApplication app = awaitAutoInstalledApp(provisioned.getId(), profile.getId());
         Assert.assertEquals(AgentApplicationOrigin.AUTO_PROVISIONED, app.getOrigin());
-        Assert.assertEquals(AgentApplicationType.GATEWAY, app.getAppType());
-        Assert.assertNotNull("GATEWAY app should have a related entity", app.getRelatedEntityId());
+        List<EntityRelation> managedByAgent = cloudRestClient.findByTo(app.getId(), EntityRelation.MANAGED_BY_AGENT_APP_TYPE, RelationTypeGroup.AGENT);
+        Assert.assertEquals("GATEWAY app should have a related entity", 1, managedByAgent.size());
 
-        DeviceId deviceId = new DeviceId(app.getRelatedEntityId().getId());
+        DeviceId deviceId = new DeviceId(managedByAgent.getFirst().getFrom().getId());
         createdDeviceIds.add(deviceId);
 
         Device device = cloudRestClient.getDeviceById(deviceId)
@@ -240,11 +253,11 @@ public class AutoInstallTest extends AbstractContainerTest {
                 .orElseThrow(() -> new IllegalStateException("No GATEWAY DOCKER_COMPOSE template found"));
     }
 
-    private AgentGroup createProvisionGroup() {
-        AgentGroup group = new AgentGroup();
+    private AgentProfile createProvisionGroup() {
+        AgentProfile group = new AgentProfile();
         group.setName("auto-install-group-" + System.currentTimeMillis());
         group.setProvisionType(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
-        group = cloudRestClient.saveAgentGroup(group);
+        group = cloudRestClient.saveAgentProfile(group);
         groupIds.add(group.getId());
         return group;
     }
@@ -293,7 +306,7 @@ public class AutoInstallTest extends AbstractContainerTest {
     /**
      * Creates a provisioning agent, waits for it to register, and returns the provisioned Agent.
      */
-    private Agent provisionAndConnect(AgentGroup group) {
+    private Agent provisionAndConnect(AgentProfile group) {
         String volumeName = "auto-install-" + System.nanoTime();
         dockerClient.createVolumeCmd().withName(volumeName).exec();
         volumeNames.add(volumeName);
@@ -321,19 +334,19 @@ public class AutoInstallTest extends AbstractContainerTest {
         return provisioned;
     }
 
-    private Agent awaitProvisionedAgent(AgentGroupId groupId) {
+    private Agent awaitProvisionedAgent(AgentProfileId groupId) {
         Awaitility.await("provisioned agent in group " + groupId)
                 .pollInterval(2, TimeUnit.SECONDS)
                 .atMost(60, TimeUnit.SECONDS)
                 .until(() -> !findAgentsInGroup(groupId).isEmpty());
-        return findAgentsInGroup(groupId).get(0);
+        return findAgentsInGroup(groupId).getFirst();
     }
 
-    private List<Agent> findAgentsInGroup(AgentGroupId groupId) {
+    private List<Agent> findAgentsInGroup(AgentProfileId groupId) {
         var page = cloudRestClient.getTenantAgents(new PageLink(100));
         if (page == null || page.getData() == null) return List.of();
         return page.getData().stream()
-                .filter(a -> groupId.equals(a.getAgentGroupId()))
+                .filter(a -> groupId.equals(a.getAgentProfileId()))
                 .toList();
     }
 

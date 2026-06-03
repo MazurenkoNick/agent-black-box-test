@@ -118,6 +118,40 @@ public class DockerVerifier {
         return container.getId();
     }
 
+    /**
+     * Removes every compose-labelled container from DinD, regardless of project.
+     * Used to guarantee a pristine DinD for adoption-sensitive tests: any leftover
+     * project (e.g. leaked by a previously failed test) would be adopted as an
+     * AgentApplication by every agent that connects, polluting auto-install logic.
+     */
+    public void removeAllComposeProjects() {
+        List<Container> containers;
+        try {
+            containers = dockerClient.listContainersCmd()
+                    .withShowAll(true)
+                    .withLabelFilter(List.of(COMPOSE_PROJECT_LABEL))
+                    .exec();
+        } catch (Exception e) {
+            log.warn("Failed to list compose containers for sweep: {}", e.getMessage());
+            return;
+        }
+        for (Container c : containers) {
+            try {
+                dockerClient.stopContainerCmd(c.getId()).withTimeout(5).exec();
+            } catch (Exception e) {
+                log.debug("Stop failed for {}: {}", c.getId(), e.getMessage());
+            }
+            try {
+                dockerClient.removeContainerCmd(c.getId()).withForce(true).exec();
+            } catch (Exception e) {
+                log.warn("Remove failed for {}: {}", c.getId(), e.getMessage());
+            }
+        }
+        if (!containers.isEmpty()) {
+            log.info("DinD sweep removed {} leftover compose container(s)", containers.size());
+        }
+    }
+
     public void removeComposeProject(String projectName) {
         List<Container> containers = listContainersByProject(projectName);
         for (Container c : containers) {

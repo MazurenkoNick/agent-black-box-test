@@ -36,17 +36,23 @@ import org.thingsboard.server.common.data.agent.AgentBulkAction;
 import org.thingsboard.server.common.data.agent.AgentBulkActionStatus;
 import org.thingsboard.server.common.data.agent.config.AgentAppConfigType;
 import org.thingsboard.server.common.data.agent.config.DockerComposeConfig;
+import org.thingsboard.server.common.data.agent.step.AgentAppStep;
 import org.thingsboard.server.common.data.agent.step.AgentAppStepType;
 import org.thingsboard.server.common.data.agent.step.ComposeTypeChoiceStep;
+import org.thingsboard.server.common.data.agent.step.StatefulStep;
+import org.thingsboard.server.common.data.agent.step.state.AgentAppStepState;
 import org.thingsboard.server.common.data.agent.template.AgentAppTemplate;
 import org.thingsboard.server.common.data.id.AgentApplicationId;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
+import org.thingsboard.server.common.data.page.SortOrder;
 import org.thingsboard.server.msa.config.AgentConfiguration;
 import org.thingsboard.server.msa.config.TBConfiguration;
 import org.thingsboard.server.msa.config.TestConfiguration;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -198,7 +204,7 @@ public abstract class AbstractContainerTest {
         AgentAppEventRequest request = new AgentAppEventRequest();
         request.setActionType(AgentAppEventActionType.INSTALL);
         request.setApplication(app);
-        return cloudRestClient.installAgentApp(request);
+        return cloudRestClient.installAgentApp(request).getApplication();
     }
 
     protected void createAppEvent(AgentApplicationId appId, AgentAppEventActionType actionType) {
@@ -207,7 +213,32 @@ public abstract class AbstractContainerTest {
         AgentAppEventRequest request = new AgentAppEventRequest();
         request.setActionType(actionType);
         request.setApplication(app);
+        request.setStepInputs(resolveRequiredStepInputs(app, actionType));
         cloudRestClient.createAgentAppEvent(appId, request);
+    }
+
+    /**
+     * Builds inputs for steps that require them (stateful steps without a default state),
+     * mirroring what the UI collects from the user before submitting an event.
+     * The template-declared state is used as the input value.
+     */
+    private Map<UUID, AgentAppStepState> resolveRequiredStepInputs(AgentApplication app, AgentAppEventActionType actionType) {
+        AgentAppTemplate template = cloudRestClient.getAgentAppTemplateById(app.getTemplateId())
+                .orElseThrow(() -> new IllegalStateException("Template not found: " + app.getTemplateId()));
+        List<AgentAppStep> steps = switch (actionType) {
+            case INSTALL, UPDATE -> template.getStartSteps();
+            case UPGRADE -> template.getUpgradeSteps();
+            case DELETE -> template.getDeleteSteps();
+            case ROLLBACK -> template.getRollbackSteps();
+            case RESTART -> template.getRestartSteps();
+        };
+        Map<UUID, AgentAppStepState> stepInputs = new HashMap<>();
+        for (AgentAppStep step : steps == null ? List.<AgentAppStep>of() : steps) {
+            if (step.isStateful() && step.hasNoDefaultState()) {
+                stepInputs.put(step.getId(), ((StatefulStep<?>) step).getState());
+            }
+        }
+        return stepInputs;
     }
 
     protected String getProjectName(AgentApplicationId appId) {
@@ -218,6 +249,29 @@ public abstract class AbstractContainerTest {
 
     protected Optional<AgentApplication> getAgentApplicationById(AgentApplicationId appId) {
         return cloudRestClient.getAgentApplicationById(appId);
+    }
+
+    /**
+     * Best-effort cleanup for the failure path: deletes the app (if it still exists)
+     * and waits for its containers to be removed from DinD. Never throws, so cleanup
+     * errors cannot mask the original test failure, and tolerates partially-constructed
+     * state (null app, null id, null project name).
+     */
+    protected void deleteAppQuietly(AgentApplication app, String projectName) {
+        if (app == null || app.getId() == null) {
+            return;
+        }
+        try {
+            if (getAgentApplicationById(app.getId()).isPresent()) {
+                createAppEvent(app.getId(), AgentAppEventActionType.DELETE);
+                awaitApplicationRemoved(app.getId(), projectName);
+                if (projectName != null) {
+                    awaitContainersRemoved(projectName);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Cleanup failed for app {} (project {})", app.getId(), projectName, e);
+        }
     }
 
     // --- Event status helpers ---
@@ -231,17 +285,32 @@ public abstract class AbstractContainerTest {
                 .pollInterval(1, TimeUnit.SECONDS)
                 .atMost(120, TimeUnit.SECONDS)
                 .until(() -> {
-                    PageData<AgentAppEvent> events = cloudRestClient.getAgentAppEvents(appId, new PageLink(1));
-                    if (events == null || events.getData().isEmpty()) return false;
-                    AgentAppEventStatus status = events.getData().get(0).getStatus();
+                    AgentAppEventStatus status = getLatestEventStatus(appId);
                     return expectedStatus.equals(status) || AgentAppEventStatus.ERROR.equals(status);
                 });
         // Verify it actually finished (not errored)
-        PageData<AgentAppEvent> events = cloudRestClient.getAgentAppEvents(appId, new PageLink(1));
-        AgentAppEventStatus actualStatus = events.getData().get(0).getStatus();
+        AgentAppEventStatus actualStatus = getLatestEventStatus(appId);
         if (!expectedStatus.equals(actualStatus)) {
             throw new AssertionError("Expected event status " + expectedStatus + " but got " + actualStatus);
         }
+    }
+
+    /**
+     * Returns the status of the newest event of the app. Sorting must be requested
+     * explicitly: without it the server returns events oldest-first, and the first
+     * item would be a long-finished event instead of the one just created.
+     */
+    protected AgentAppEventStatus getLatestEventStatus(AgentApplicationId appId) {
+        return getLatestEvent(appId).getStatus();
+    }
+
+    protected AgentAppEvent getLatestEvent(AgentApplicationId appId) {
+        PageLink newestFirst = new PageLink(1, 0, null, new SortOrder("createdTime", SortOrder.Direction.DESC));
+        PageData<AgentAppEvent> events = cloudRestClient.getAgentAppEvents(appId, newestFirst);
+        if (events == null || events.getData().isEmpty()) {
+            return null;
+        }
+        return events.getData().getFirst()
     }
 
     protected void awaitAllEventsFinished(AgentApplicationId appId) {

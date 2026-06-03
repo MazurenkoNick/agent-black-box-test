@@ -20,7 +20,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.Assert;
 import org.junit.Test;
 import org.thingsboard.server.common.data.agent.AgentAppEventActionType;
-import org.thingsboard.server.common.data.agent.AgentAppEventRequest;
 import org.thingsboard.server.common.data.agent.AgentApplication;
 import org.thingsboard.server.common.data.agent.template.AgentAppTemplate;
 import org.thingsboard.server.msa.AbstractContainerTest;
@@ -34,38 +33,36 @@ public class AppInstallTest extends AbstractContainerTest {
     public void testInstallCreatesContainersInDind() {
         AgentAppTemplate template = getLatestGenericTemplate();
         Optional<JsonNode> compose = getComposeTemplateByName(template, "default");
-        AgentApplication app = installDockerComposeApp(template, compose.get());
+        AgentApplication app = null;
+        String projectName = null;
+        try {
+            app = installDockerComposeApp(template, compose.get());
 
-        Assert.assertNotNull("Installed app should have an ID", app.getId());
-        log.info("Installed app: {}", app.getId());
+            Assert.assertNotNull("Installed app should have an ID", app.getId());
+            log.info("Installed app: {}", app.getId());
 
-        // Wait for event to finish
-        awaitEventFinished(app.getId());
+            // Wait for event to finish
+            awaitEventFinished(app.getId());
 
-        // Get project name from REST API (read-only field set by server)
-        String projectName = getProjectName(app.getId());
-        Assert.assertNotNull("Project name should be set by server", projectName);
-        log.info("Agent project name: {}", projectName);
+            // Get project name from REST API (read-only field set by server)
+            projectName = getProjectName(app.getId());
+            Assert.assertNotNull("Project name should be set by server", projectName);
+            log.info("Agent project name: {}", projectName);
 
-        // Verify container is running inside DinD
-        awaitContainersRunning(projectName, 1);
-        Assert.assertTrue("Container should be running in DinD", dockerVerifier.countRunningContainers(projectName) >= 1);
+            // Verify container is running inside DinD
+            awaitContainersRunning(projectName, 1);
+            Assert.assertTrue("Container should be running in DinD", dockerVerifier.countRunningContainers(projectName) >= 1);
 
-        // Cleanup
-        cloudRestClient.createAgentAppEvent(app.getId(), buildRequest(app, AgentAppEventActionType.DELETE));
-        awaitApplicationRemoved(app.getId(), projectName);
+            // Cleanup (verified as part of the test)
+            createAppEvent(app.getId(), AgentAppEventActionType.DELETE);
+            awaitApplicationRemoved(app.getId(), projectName);
 
-        // Verify containers removed from DinD
-        awaitContainersRemoved(projectName);
-        Assert.assertFalse("No containers should remain after delete", dockerVerifier.projectExists(projectName));
+            // Verify containers removed from DinD
+            awaitContainersRemoved(projectName);
+            Assert.assertFalse("No containers should remain after delete", dockerVerifier.projectExists(projectName));
+        } finally {
+            deleteAppQuietly(app, projectName);
+        }
     }
 
-    private AgentAppEventRequest buildRequest(
-            AgentApplication app,
-            AgentAppEventActionType actionType) {
-        AgentAppEventRequest request = new AgentAppEventRequest();
-        request.setActionType(actionType);
-        request.setApplication(app);
-        return request;
-    }
 }

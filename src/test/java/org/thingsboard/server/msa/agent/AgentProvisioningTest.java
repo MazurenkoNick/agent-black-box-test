@@ -28,9 +28,9 @@ import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.thingsboard.server.common.data.agent.Agent;
-import org.thingsboard.server.common.data.agent.AgentGroup;
+import org.thingsboard.server.common.data.agent.AgentProfile;
 import org.thingsboard.server.common.data.agent.AgentProvisionType;
-import org.thingsboard.server.common.data.id.AgentGroupId;
+import org.thingsboard.server.common.data.id.AgentProfileId;
 import org.thingsboard.server.common.data.id.AgentId;
 import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.msa.AbstractContainerTest;
@@ -60,7 +60,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
 
     private final List<String> containerIds = new ArrayList<>();
     private final List<String> volumeNames = new ArrayList<>();
-    private final List<AgentGroupId> groupIds = new ArrayList<>();
+    private final List<AgentProfileId> groupIds = new ArrayList<>();
     private final List<AgentId> provisionedAgentIds = new ArrayList<>();
 
     @BeforeClass
@@ -118,9 +118,9 @@ public class AgentProvisioningTest extends AbstractContainerTest {
         }
         provisionedAgentIds.clear();
 
-        for (AgentGroupId groupId : groupIds) {
+        for (AgentProfileId groupId : groupIds) {
             try {
-                cloudRestClient.deleteAgentGroup(groupId);
+                cloudRestClient.deleteAgentProfile(groupId);
             } catch (Exception ignored) {
             }
         }
@@ -133,7 +133,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
 
     @Test
     public void testProvisioningHappyPath() {
-        AgentGroup group = createProvisionGroup(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
+        AgentProfile group = createProvisionGroup(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
         Assert.assertNotNull("Group should have auto-generated provision key", group.getProvisionKey());
         Assert.assertNotNull("Group should have auto-generated provision secret", group.getProvisionSecret());
 
@@ -143,7 +143,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
         Agent provisioned = awaitProvisionedAgent(group.getId());
         Assert.assertNotNull("Provisioned agent should exist", provisioned);
         Assert.assertEquals("Agent should belong to the provision group",
-                group.getId(), provisioned.getAgentGroupId());
+                group.getId(), provisioned.getAgentProfileId());
         provisionedAgentIds.add(provisioned.getId());
 
         log.info("Provisioned agent: id={}, routingKey={}", provisioned.getId(), provisioned.getRoutingKey());
@@ -151,7 +151,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
 
     @Test
     public void testProvisioningInvalidKey() {
-        AgentGroup group = createProvisionGroup(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
+        AgentProfile group = createProvisionGroup(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
 
         String containerId = startProvisioningAgent("not-a-real-key", group.getProvisionSecret(), null);
 
@@ -165,7 +165,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
 
     @Test
     public void testProvisioningInvalidSecret() {
-        AgentGroup group = createProvisionGroup(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
+        AgentProfile group = createProvisionGroup(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
 
         String containerId = startProvisioningAgent(group.getProvisionKey(), "wrong-secret", null);
 
@@ -178,12 +178,12 @@ public class AgentProvisioningTest extends AbstractContainerTest {
     @Test
     public void testProvisioningDisabled() {
         // Create group with provisioning disabled but explicit keys so the lookup succeeds
-        AgentGroup group = new AgentGroup();
+        AgentProfile group = new AgentProfile();
         group.setName("provision-disabled-" + System.currentTimeMillis());
         group.setProvisionType(AgentProvisionType.DISABLED);
         group.setProvisionKey("disabled-key-" + System.nanoTime());
         group.setProvisionSecret("disabled-secret-" + System.nanoTime());
-        group = cloudRestClient.saveAgentGroup(group);
+        group = cloudRestClient.saveAgentProfile(group);
         groupIds.add(group.getId());
 
         String containerId = startProvisioningAgent(group.getProvisionKey(), group.getProvisionSecret(), null);
@@ -196,7 +196,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
 
     @Test
     public void testCredentialPersistenceAcrossRestart() {
-        AgentGroup group = createProvisionGroup(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
+        AgentProfile group = createProvisionGroup(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
 
         // Create a named volume to persist ~/.tb-agent/credentials.json across restarts
         String volumeName = "provision-creds-" + System.nanoTime();
@@ -238,12 +238,12 @@ public class AgentProvisioningTest extends AbstractContainerTest {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private AgentGroup createProvisionGroup(AgentProvisionType type) {
-        AgentGroup group = new AgentGroup();
+    private AgentProfile createProvisionGroup(AgentProvisionType type) {
+        AgentProfile group = new AgentProfile();
         group.setName("provision-group-" + System.currentTimeMillis());
         group.setProvisionType(type);
         // Key and secret are auto-generated by the server for non-DISABLED types
-        group = cloudRestClient.saveAgentGroup(group);
+        group = cloudRestClient.saveAgentProfile(group);
         groupIds.add(group.getId());
         log.info("Created provision group: id={}, key={}", group.getId(), group.getProvisionKey());
         return group;
@@ -282,19 +282,19 @@ public class AgentProvisioningTest extends AbstractContainerTest {
     /**
      * Polls the REST API until an Agent belonging to the given group appears.
      */
-    private Agent awaitProvisionedAgent(AgentGroupId groupId) {
+    private Agent awaitProvisionedAgent(AgentProfileId groupId) {
         Awaitility.await("provisioned agent in group " + groupId)
                 .pollInterval(2, TimeUnit.SECONDS)
                 .atMost(60, TimeUnit.SECONDS)
                 .until(() -> !findAgentsInGroup(groupId).isEmpty());
-        return findAgentsInGroup(groupId).get(0);
+        return findAgentsInGroup(groupId).getFirst();
     }
 
-    private List<Agent> findAgentsInGroup(AgentGroupId groupId) {
+    private List<Agent> findAgentsInGroup(AgentProfileId groupId) {
         var page = cloudRestClient.getTenantAgents(new PageLink(100));
         if (page == null || page.getData() == null) return List.of();
         return page.getData().stream()
-                .filter(a -> groupId.equals(a.getAgentGroupId()))
+                .filter(a -> groupId.equals(a.getAgentProfileId()))
                 .toList();
     }
 

@@ -38,41 +38,47 @@ public class ReconnectTest extends AbstractContainerTest {
     public void testAgentReconnectsAndCompletesEvent() throws Exception {
         AgentAppTemplate template = getLatestGenericTemplate();
         Optional<JsonNode> compose = getComposeTemplateByName(template, "default");
-        AgentApplication app = installDockerComposeApp(template, compose.get());
-        awaitEventFinished(app.getId());
+        AgentApplication app = null;
+        String projectName = null;
+        try {
+            app = installDockerComposeApp(template, compose.get());
+            awaitEventFinished(app.getId());
 
-        String projectName = getProjectName(app.getId());
-        awaitContainersRunning(projectName, 1);
+            projectName = getProjectName(app.getId());
+            awaitContainersRunning(projectName, 1);
 
-        // Bounce the tb-agent service to simulate reconnection
-        log.info("Bouncing tb-agent service to test reconnection...");
-        ContainerTestSuite.testContainer.getContainerByServiceName(TB_AGENT_SERVICE_NAME)
-                .ifPresent(container -> {
-                    container.getDockerClient().restartContainerCmd(container.getContainerId()).exec();
-                });
+            // Bounce the tb-agent service to simulate reconnection
+            log.info("Bouncing tb-agent service to test reconnection...");
+            ContainerTestSuite.testContainer.getContainerByServiceName(TB_AGENT_SERVICE_NAME)
+                    .ifPresent(container -> {
+                        container.getDockerClient().restartContainerCmd(container.getContainerId()).exec();
+                    });
 
-        // Wait a bit for the agent to reconnect (it retries with 2s backoff)
-        Awaitility.await("agent reconnects")
-                .pollDelay(3, TimeUnit.SECONDS)
-                .pollInterval(2, TimeUnit.SECONDS)
-                .atMost(60, TimeUnit.SECONDS)
-                .until(() -> true); // just wait for reconnect window
+            // Wait a bit for the agent to reconnect (it retries with 2s backoff)
+            Awaitility.await("agent reconnects")
+                    .pollDelay(3, TimeUnit.SECONDS)
+                    .pollInterval(2, TimeUnit.SECONDS)
+                    .atMost(60, TimeUnit.SECONDS)
+                    .until(() -> true); // just wait for reconnect window
 
-        // Create a new event after reconnect
-        createAppEvent(app.getId(), AgentAppEventActionType.RESTART);
-        awaitEventFinished(app.getId());
+            // Create a new event after reconnect
+            createAppEvent(app.getId(), AgentAppEventActionType.RESTART);
+            awaitEventFinished(app.getId());
 
-        // Verify containers still running
-        awaitContainersRunning(projectName, 1);
-        Assert.assertTrue("Container should be running after agent reconnect and restart",
-                dockerVerifier.countRunningContainers(projectName) >= 1);
+            // Verify containers still running
+            awaitContainersRunning(projectName, 1);
+            Assert.assertTrue("Container should be running after agent reconnect and restart",
+                    dockerVerifier.countRunningContainers(projectName) >= 1);
 
-        // Cleanup
-        createAppEvent(app.getId(), AgentAppEventActionType.DELETE);
-        awaitApplicationRemoved(app.getId(), projectName);
+            // Cleanup (verified as part of the test)
+            createAppEvent(app.getId(), AgentAppEventActionType.DELETE);
+            awaitApplicationRemoved(app.getId(), projectName);
 
-        // Verify containers removed from DinD
-        awaitContainersRemoved(projectName);
-        Assert.assertFalse("No containers should remain after delete", dockerVerifier.projectExists(projectName));
+            // Verify containers removed from DinD
+            awaitContainersRemoved(projectName);
+            Assert.assertFalse("No containers should remain after delete", dockerVerifier.projectExists(projectName));
+        } finally {
+            deleteAppQuietly(app, projectName);
+        }
     }
 }
