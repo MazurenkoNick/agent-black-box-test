@@ -44,7 +44,7 @@ import java.util.Optional;
  * <p>
  * Verifies that:
  * - Installing an app with a profileId copies the profile's config onto the app
- * - Bulk UPDATE pushes the profile's current config to all apps in a group
+ * - Bulk UPDATE pushes the applicationProfile's current config to all apps in a agentProfile
  * - Direct config edits are blocked on profile-managed apps
  */
 @Slf4j
@@ -120,19 +120,19 @@ public class ProfileConfigTest extends AbstractContainerTest {
         profile = cloudRestClient.saveAgentAppProfile(profile);
         AgentAppProfileId profileId = profile.getId();
 
-        // Create group and assign profile
-        AgentProfile group = new AgentProfile();
-        group.setName("bulk-group-" + System.currentTimeMillis());
-        group.setProvisionType(AgentProvisionType.DISABLED);
-        group = cloudRestClient.saveAgentProfile(group);
-        AgentProfileId groupId = group.getId();
-        cloudRestClient.assignAppProfileToAgentProfile(groupId, profileId);
+        // Create agentProfile and assign profile
+        AgentProfile agentProfile = new AgentProfile();
+        agentProfile.setName("bulk-agentProfile-" + System.currentTimeMillis());
+        agentProfile.setProvisionType(AgentProvisionType.DISABLED);
+        agentProfile = cloudRestClient.saveAgentProfile(agentProfile);
+        AgentProfileId agentProfileId = agentProfile.getId();
+        cloudRestClient.assignAppProfileToAgentProfile(agentProfileId, profileId);
 
-        // Assign agent to group
-        agent.setAgentProfileId(groupId);
+        // Assign agent to agentProfile
+        agent.setAgentProfileId(agentProfileId);
         agent = cloudRestClient.saveAgent(agent);
 
-        log.info("Created profile: {}, group: {}", profileId, groupId);
+        log.info("Created profile: {}, agentProfile: {}", profileId, agentProfileId);
 
         AgentApplication installed = null;
         String projectName = null;
@@ -155,7 +155,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
             BulkOperationRequest bulkRequest = new BulkOperationRequest();
             bulkRequest.setActionType(AgentAppEventActionType.UPDATE);
 
-            AgentBulkAction bulkAction = cloudRestClient.bulkOperation(groupId, profileId, bulkRequest, false);
+            AgentBulkAction bulkAction = cloudRestClient.bulkOperation(agentProfileId, profileId, bulkRequest, false);
             Assert.assertNotNull("Bulk action should not be null", bulkAction);
             Assert.assertNotNull("Bulk action should have an ID", bulkAction.getId());
             Assert.assertEquals("Bulk action should be QUEUED initially",
@@ -185,18 +185,18 @@ public class ProfileConfigTest extends AbstractContainerTest {
             }
             deleteAppQuietly(installed, projectName);
 
-            // Unassign agent from group
+            // Unassign agent from agentProfile
             try {
                 agent.setAgentProfileId(null);
                 agent = cloudRestClient.saveAgent(agent);
             } catch (Exception e) {
-                log.warn("Cleanup: failed to unassign agent from group {}", groupId, e);
+                log.warn("Cleanup: failed to unassign agent from agentProfile {}", agentProfileId, e);
             }
 
             try {
-                cloudRestClient.deleteAgentProfile(groupId);
+                cloudRestClient.deleteAgentProfile(agentProfileId);
             } catch (Exception e) {
-                log.warn("Cleanup: failed to delete group {}", groupId, e);
+                log.warn("Cleanup: failed to delete agentProfile {}", agentProfileId, e);
             }
             // Profile can only be deleted after apps referencing it are gone
             deleteAppProfileQuietly(profileId);

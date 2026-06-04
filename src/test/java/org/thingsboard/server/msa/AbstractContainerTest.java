@@ -42,6 +42,7 @@ import org.thingsboard.server.common.data.agent.step.ComposeTypeChoiceStep;
 import org.thingsboard.server.common.data.agent.step.StatefulStep;
 import org.thingsboard.server.common.data.agent.step.state.AgentAppStepState;
 import org.thingsboard.server.common.data.agent.template.AgentAppTemplate;
+import org.thingsboard.server.common.data.id.AgentAppProfileId;
 import org.thingsboard.server.common.data.id.AgentApplicationId;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
@@ -196,7 +197,12 @@ public abstract class AbstractContainerTest {
     // --- App lifecycle helpers ---
 
     protected AgentApplication installDockerComposeApp(AgentAppTemplate template, JsonNode compose) {
+        return this.installDockerComposeApp(template, compose, null);
+    }
+
+    protected AgentApplication installDockerComposeApp(AgentAppTemplate template, JsonNode compose, AgentAppProfileId profileId) {
         AgentApplication app = AgentApplication.fromTemplate(template);
+        app.setApplicationProfileId(profileId);
         app.setAgentId(agent.getId());
         app.setName("test-app-" + System.currentTimeMillis());
         DockerComposeConfig config = (DockerComposeConfig) app.getConfig();
