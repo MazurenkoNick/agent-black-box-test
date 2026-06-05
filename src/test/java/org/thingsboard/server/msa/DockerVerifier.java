@@ -96,7 +96,53 @@ public class DockerVerifier {
      * simulating a compose project that the agent should discover via state sync.
      */
     public String createStubComposeProject(String projectName, String serviceName, String image) {
+        return createStubComposeProject(projectName, serviceName, image, Map.of());
+    }
+
+    /**
+     * Same as {@link #createStubComposeProject(String, String, String)}, but with environment
+     * variables set on the container. The agent reconstructs the compose definition (including
+     * the env section) from container inspection, so env vars set here end up in the compose
+     * JSON the server receives on auto-discovery.
+     */
+    public String createStubComposeProject(String projectName, String serviceName, String image, Map<String, String> env) {
         log.info("Creating compose project '{}' with service '{}' image '{}'", projectName, serviceName, image);
+        pullImageIfMissing(image);
+        CreateContainerResponse container = dockerClient.createContainerCmd(image)
+                .withName(projectName + "-" + serviceName + "-1")
+                .withLabels(Map.of(
+                        COMPOSE_PROJECT_LABEL, projectName,
+                        COMPOSE_SERVICE_LABEL, serviceName
+                ))
+                .withEnv(env.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).toList())
+                .withHostConfig(HostConfig.newHostConfig().withAutoRemove(false))
+                .exec();
+        dockerClient.startContainerCmd(container.getId()).exec();
+        log.info("Started container {} for project '{}'", container.getId(), projectName);
+        return container.getId();
+    }
+
+    /**
+     * Tags an existing (or pulled) image with another name inside DinD. Lets tests fake
+     * a heavyweight image (e.g. tb-edge) with a lightweight one: auto-discovery only
+     * looks at the image string of the container, not at its content.
+     */
+    public void ensureImageTag(String sourceImage, String targetImage) {
+        if (imageExists(targetImage)) {
+            return;
+        }
+        pullImageIfMissing(sourceImage);
+        int colonIdx = targetImage.lastIndexOf(':');
+        String repository = colonIdx >= 0 ? targetImage.substring(0, colonIdx) : targetImage;
+        String tag = colonIdx >= 0 ? targetImage.substring(colonIdx + 1) : "latest";
+        dockerClient.tagImageCmd(sourceImage, repository, tag).exec();
+        log.info("Tagged image '{}' as '{}' in DinD", sourceImage, targetImage);
+    }
+
+    private void pullImageIfMissing(String image) {
+        if (imageExists(image)) {
+            return;
+        }
         try {
             dockerClient.pullImageCmd(image)
                     .exec(new PullImageResultCallback())
@@ -105,17 +151,15 @@ public class DockerVerifier {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while pulling image " + image, e);
         }
-        CreateContainerResponse container = dockerClient.createContainerCmd(image)
-                .withName(projectName + "-" + serviceName + "-1")
-                .withLabels(Map.of(
-                        COMPOSE_PROJECT_LABEL, projectName,
-                        COMPOSE_SERVICE_LABEL, serviceName
-                ))
-                .withHostConfig(HostConfig.newHostConfig().withAutoRemove(false))
-                .exec();
-        dockerClient.startContainerCmd(container.getId()).exec();
-        log.info("Started container {} for project '{}'", container.getId(), projectName);
-        return container.getId();
+    }
+
+    private boolean imageExists(String image) {
+        try {
+            dockerClient.inspectImageCmd(image).exec();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**

@@ -20,6 +20,8 @@ import org.awaitility.Awaitility;
 import org.junit.Assert;
 import org.junit.Test;
 import org.thingsboard.server.common.data.agent.AgentApplication;
+import org.thingsboard.server.common.data.agent.AgentApplicationOrigin;
+import org.thingsboard.server.common.data.agent.AgentApplicationType;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.msa.AbstractContainerTest;
@@ -59,6 +61,12 @@ public class StateSyncTest extends AbstractContainerTest {
 
             Assert.assertNotNull("Synced app should have an ID", syncedApp.getId());
             Assert.assertEquals("Project name should match", projectName, syncedApp.getProjectName());
+            Assert.assertEquals("Synced app should have DISCOVERED origin",
+                    AgentApplicationOrigin.DISCOVERED, syncedApp.getOrigin());
+            Assert.assertEquals("App with unknown image should fall back to GENERIC type",
+                    AgentApplicationType.GENERIC, syncedApp.getAppType());
+            Assert.assertEquals("App should be bound to the latest GENERIC template",
+                    getLatestGenericTemplate().getId(), syncedApp.getTemplateId());
 
             log.info("Agent synced external project '{}' as app {}", projectName, syncedApp.getId());
         } finally {
