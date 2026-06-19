@@ -16,19 +16,22 @@
 package org.thingsboard.server.msa;
 
 import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.command.InspectContainerResponse;
+import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.ExposedPort;
+import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.Ports;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import lombok.extern.slf4j.Slf4j;
 
-import com.github.dockerjava.api.command.CreateContainerResponse;
-import com.github.dockerjava.api.command.PullImageResultCallback;
-import com.github.dockerjava.api.model.HostConfig;
-
 import java.net.URI;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -218,5 +221,63 @@ public class DockerVerifier {
                 .map(Container::getState)
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * Returns the environment variables (KEY -> VALUE) of the container backing the given
+     * compose service, read via container inspection. Used to assert that server-side
+     * ${tb.<name>} argument substitution reached the deployed container.
+     */
+    public Map<String, String> getContainerEnv(String projectName, String serviceName) {
+        return listContainersByProject(projectName).stream()
+                .filter(c -> {
+                    String svc = c.getLabels() != null ? c.getLabels().get(COMPOSE_SERVICE_LABEL) : null;
+                    return serviceName.equals(svc);
+                })
+                .findFirst()
+                .map(c -> {
+                    InspectContainerResponse inspect = dockerClient.inspectContainerCmd(c.getId()).exec();
+                    Map<String, String> env = new HashMap<>();
+                    String[] envEntries = inspect.getConfig() != null ? inspect.getConfig().getEnv() : null;
+                    if (envEntries != null) {
+                        for (String entry : envEntries) {
+                            int idx = entry.indexOf('=');
+                            if (idx > 0) {
+                                env.put(entry.substring(0, idx), entry.substring(idx + 1));
+                            }
+                        }
+                    }
+                    return env;
+                })
+                .orElse(Collections.emptyMap());
+    }
+
+    /**
+     * Returns the published ports of the container backing the given compose service, keyed by
+     * "containerPort/protocol" (e.g. "8080/tcp") mapped to the bound host port. Used to assert that a
+     * JSON-format argument was injected raw into the structured ports list.
+     */
+    public Map<String, String> getPublishedPorts(String projectName, String serviceName) {
+        return listContainersByProject(projectName).stream()
+                .filter(c -> {
+                    String svc = c.getLabels() != null ? c.getLabels().get(COMPOSE_SERVICE_LABEL) : null;
+                    return serviceName.equals(svc);
+                })
+                .findFirst()
+                .map(c -> {
+                    InspectContainerResponse inspect = dockerClient.inspectContainerCmd(c.getId()).exec();
+                    Map<String, String> result = new HashMap<>();
+                    Ports ports = inspect.getNetworkSettings() != null ? inspect.getNetworkSettings().getPorts() : null;
+                    if (ports != null && ports.getBindings() != null) {
+                        for (Map.Entry<ExposedPort, Ports.Binding[]> entry : ports.getBindings().entrySet()) {
+                            Ports.Binding[] bindings = entry.getValue();
+                            if (bindings != null && bindings.length > 0) {
+                                result.put(entry.getKey().toString(), bindings[0].getHostPortSpec());
+                            }
+                        }
+                    }
+                    return result;
+                })
+                .orElse(Collections.emptyMap());
     }
 }

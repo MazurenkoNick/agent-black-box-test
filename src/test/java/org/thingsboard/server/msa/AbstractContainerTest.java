@@ -240,7 +240,7 @@ public abstract class AbstractContainerTest {
         };
         Map<UUID, AgentAppStepState> stepInputs = new HashMap<>();
         for (AgentAppStep step : steps == null ? List.<AgentAppStep>of() : steps) {
-            if (step.isStateful() && step.hasNoDefaultState()) {
+            if (step.isStateful() && !step.hasDefaultState()) {
                 stepInputs.put(step.getId(), ((StatefulStep<?>) step).getState());
             }
         }
