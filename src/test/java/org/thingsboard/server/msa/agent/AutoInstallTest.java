@@ -32,6 +32,7 @@ import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.agent.Agent;
 import org.thingsboard.server.common.data.agent.AgentAppProfile;
 import org.thingsboard.server.common.data.agent.AgentApplication;
+import org.thingsboard.server.common.data.agent.AgentApplicationInfo;
 import org.thingsboard.server.common.data.agent.AgentApplicationOrigin;
 import org.thingsboard.server.common.data.agent.AgentApplicationType;
 import org.thingsboard.server.common.data.agent.AgentProfile;
@@ -267,7 +268,7 @@ public class AutoInstallTest extends AbstractContainerTest {
         AgentAppProfile profile = new AgentAppProfile();
         profile.setName(prefix + "-" + System.currentTimeMillis());
         profile.setAppType(appType);
-        profile.setTemplateId(template.getId());
+        profile.setTemplateVersion(template.getCurrentVersion());
         DockerComposeConfig config = new DockerComposeConfig();
         config.setCompose(compose);
         profile.setConfig(config);
@@ -358,7 +359,7 @@ public class AutoInstallTest extends AbstractContainerTest {
         return findAppByProfile(agentId, profileId).get();
     }
 
-    private Optional<AgentApplication> findAppByProfile(AgentId agentId, AgentAppProfileId profileId) {
+    private Optional<AgentApplicationInfo> findAppByProfile(AgentId agentId, AgentAppProfileId profileId) {
         var page = cloudRestClient.getAgentApplicationsByAgentId(agentId, new PageLink(100));
         if (page == null || page.getData() == null) return Optional.empty();
         return page.getData().stream()

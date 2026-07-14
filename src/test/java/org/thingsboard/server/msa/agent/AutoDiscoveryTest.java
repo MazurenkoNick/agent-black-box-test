@@ -26,6 +26,7 @@ import org.thingsboard.server.common.data.agent.AgentAppEvent;
 import org.thingsboard.server.common.data.agent.AgentAppEventActionType;
 import org.thingsboard.server.common.data.agent.AgentAppProfile;
 import org.thingsboard.server.common.data.agent.AgentApplication;
+import org.thingsboard.server.common.data.agent.AgentApplicationInfo;
 import org.thingsboard.server.common.data.agent.AgentApplicationOrigin;
 import org.thingsboard.server.common.data.agent.AgentApplicationType;
 import org.thingsboard.server.common.data.agent.AgentProfile;
@@ -95,7 +96,7 @@ public class AutoDiscoveryTest extends AbstractContainerTest {
             Assert.assertEquals(AgentApplicationOrigin.DISCOVERED, app.getOrigin());
             Assert.assertEquals(AgentApplicationType.EDGE, app.getAppType());
             Assert.assertEquals("Discovered app should be bound to the edge template matching the image version",
-                    getEdgeTemplate(EDGE_TEMPLATE_VERSION).getId(), app.getTemplateId());
+                    getEdgeTemplate(EDGE_TEMPLATE_VERSION).getCurrentVersion(), app.getTemplateVersion());
             Assert.assertNull("Discovered app without matching profile should not be profile-managed",
                     app.getApplicationProfileId());
 
@@ -133,7 +134,7 @@ public class AutoDiscoveryTest extends AbstractContainerTest {
         AgentAppProfile profile = new AgentAppProfile();
         profile.setName("auto-discovery-profile-" + System.currentTimeMillis());
         profile.setAppType(AgentApplicationType.EDGE);
-        profile.setTemplateId(template.getId());
+        profile.setTemplateVersion(template.getCurrentVersion());
         DockerComposeConfig profileConfig = new DockerComposeConfig();
         profileConfig.setCompose(buildEdgeCompose());
         profile.setConfig(profileConfig);
@@ -240,7 +241,7 @@ public class AutoDiscoveryTest extends AbstractContainerTest {
         return findAppByProjectName(projectName).get();
     }
 
-    private Optional<AgentApplication> findAppByProjectName(String projectName) {
+    private Optional<AgentApplicationInfo> findAppByProjectName(String projectName) {
         var page = cloudRestClient.getAgentApplicationsByAgentId(agent.getId(), new PageLink(100));
         if (page == null || page.getData() == null) return Optional.empty();
         return page.getData().stream()

@@ -31,6 +31,7 @@ import org.thingsboard.server.common.data.agent.AgentAppEventActionType;
 import org.thingsboard.server.common.data.agent.AgentAppEventRequest;
 import org.thingsboard.server.common.data.agent.AgentAppEventStatus;
 import org.thingsboard.server.common.data.agent.AgentApplication;
+import org.thingsboard.server.common.data.agent.AgentApplicationInfo;
 import org.thingsboard.server.common.data.agent.AgentApplicationType;
 import org.thingsboard.server.common.data.agent.AgentBulkAction;
 import org.thingsboard.server.common.data.agent.AgentBulkActionStatus;
@@ -210,6 +211,7 @@ public abstract class AbstractContainerTest {
         AgentAppEventRequest request = new AgentAppEventRequest();
         request.setActionType(AgentAppEventActionType.INSTALL);
         request.setApplication(app);
+        request.setStepInputs(resolveRequiredStepInputs(app, AgentAppEventActionType.INSTALL));
         return cloudRestClient.installAgentApp(request).getApplication();
     }
 
@@ -224,13 +226,16 @@ public abstract class AbstractContainerTest {
     }
 
     /**
-     * Builds inputs for steps that require them (stateful steps without a default state),
+     * Builds inputs for steps that require them (stateful steps declaring a userChoice field),
      * mirroring what the UI collects from the user before submitting an event.
      * The template-declared state is used as the input value.
      */
-    private Map<UUID, AgentAppStepState> resolveRequiredStepInputs(AgentApplication app, AgentAppEventActionType actionType) {
-        AgentAppTemplate template = cloudRestClient.getAgentAppTemplateById(app.getTemplateId())
-                .orElseThrow(() -> new IllegalStateException("Template not found: " + app.getTemplateId()));
+    protected Map<UUID, AgentAppStepState> resolveRequiredStepInputs(AgentApplication app, AgentAppEventActionType actionType) {
+        AgentAppTemplate template = cloudRestClient.getAgentAppTemplates().stream()
+                .filter(t -> t.getAppType().equals(app.getAppType()))
+                .filter(t -> t.getCurrentVersion().equals(app.getTemplateVersion()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Template not found: " + app.getTemplateVersion()));
         List<AgentAppStep> steps = switch (actionType) {
             case INSTALL, UPDATE -> template.getStartSteps();
             case UPGRADE -> template.getUpgradeSteps();
@@ -240,7 +245,7 @@ public abstract class AbstractContainerTest {
         };
         Map<UUID, AgentAppStepState> stepInputs = new HashMap<>();
         for (AgentAppStep step : steps == null ? List.<AgentAppStep>of() : steps) {
-            if (step.isStateful() && !step.hasDefaultState()) {
+            if (step.isStateful() && ((StatefulStep<?>) step).getState().hasUserChoice()) {
                 stepInputs.put(step.getId(), ((StatefulStep<?>) step).getState());
             }
         }
@@ -253,7 +258,7 @@ public abstract class AbstractContainerTest {
                 .orElseThrow(() -> new IllegalStateException("App not found: " + appId));
     }
 
-    protected Optional<AgentApplication> getAgentApplicationById(AgentApplicationId appId) {
+    protected Optional<AgentApplicationInfo> getAgentApplicationById(AgentApplicationId appId) {
         return cloudRestClient.getAgentApplicationById(appId);
     }
 

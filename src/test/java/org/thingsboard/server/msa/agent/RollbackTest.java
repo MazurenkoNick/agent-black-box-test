@@ -37,9 +37,9 @@ public class RollbackTest extends AbstractContainerTest {
 
     @Test
     public void testRollbackOnFailedUpdate() {
-        // Install app with 1.0.0 (valid nginx:alpine)
+        // Install app with the generic template (valid nginx:alpine)
         AgentAppTemplate template
-                = getGenericTemplate("1.0.0");
+                = getLatestGenericTemplate();
         Optional<JsonNode> compose = getComposeTemplateByName(template, "default");
         AgentApplication app = null;
         String projectName = null;
@@ -64,6 +64,7 @@ public class RollbackTest extends AbstractContainerTest {
 
             AgentAppEventRequest updateRequest = new AgentAppEventRequest();
             updateRequest.setActionType(AgentAppEventActionType.UPDATE);
+            updateRequest.setStepInputs(resolveRequiredStepInputs(appForUpdate, AgentAppEventActionType.UPDATE));
             cloudRestClient.updateAgentApplication(appForUpdate);
             cloudRestClient.createAgentAppEvent(app.getId(), updateRequest);
 

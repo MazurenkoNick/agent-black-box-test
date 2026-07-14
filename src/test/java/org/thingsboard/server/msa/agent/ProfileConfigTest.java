@@ -60,7 +60,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
         AgentAppProfile profile = new AgentAppProfile();
         profile.setName("test-profile-" + System.currentTimeMillis());
         profile.setAppType(AgentApplicationType.GENERIC);
-        profile.setTemplateId(template.getId());
+        profile.setTemplateVersion(template.getCurrentVersion());
         DockerComposeConfig profileConfig = new DockerComposeConfig();
         profileConfig.setCompose(compose.get());
         profile.setConfig(profileConfig);
@@ -81,6 +81,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
             AgentAppEventRequest request = new AgentAppEventRequest();
             request.setActionType(AgentAppEventActionType.INSTALL);
             request.setApplication(app);
+            request.setStepInputs(resolveRequiredStepInputs(app, AgentAppEventActionType.INSTALL));
             installed = cloudRestClient.installAgentApp(request).getApplication();
 
             Assert.assertNotNull("Installed app should have an ID", installed.getId());
@@ -113,7 +114,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
         AgentAppProfile profile = new AgentAppProfile();
         profile.setName("bulk-profile-" + System.currentTimeMillis());
         profile.setAppType(AgentApplicationType.GENERIC);
-        profile.setTemplateId(template.getId());
+        profile.setTemplateVersion(template.getCurrentVersion());
         DockerComposeConfig profileConfig = new DockerComposeConfig();
         profileConfig.setCompose(compose.get());
         profile.setConfig(profileConfig);
@@ -146,6 +147,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
             AgentAppEventRequest installRequest = new AgentAppEventRequest();
             installRequest.setActionType(AgentAppEventActionType.INSTALL);
             installRequest.setApplication(app);
+            installRequest.setStepInputs(resolveRequiredStepInputs(app, AgentAppEventActionType.INSTALL));
             installed = cloudRestClient.installAgentApp(installRequest).getApplication();
             awaitEventFinished(installed.getId());
             projectName = getProjectName(installed.getId());
@@ -154,8 +156,10 @@ public class ProfileConfigTest extends AbstractContainerTest {
             // Now run bulk UPDATE — should push profile config to the app
             BulkOperationRequest bulkRequest = new BulkOperationRequest();
             bulkRequest.setActionType(AgentAppEventActionType.UPDATE);
+            bulkRequest.setStepInputs(resolveRequiredStepInputs(
+                    AgentApplication.fromTemplate(template), AgentAppEventActionType.UPDATE));
 
-            AgentBulkAction bulkAction = cloudRestClient.bulkOperation(agentProfileId, profileId, bulkRequest, false);
+            AgentBulkAction bulkAction = cloudRestClient.bulkOperation(agentProfileId, profileId, bulkRequest);
             Assert.assertNotNull("Bulk action should not be null", bulkAction);
             Assert.assertNotNull("Bulk action should have an ID", bulkAction.getId());
             Assert.assertEquals("Bulk action should be QUEUED initially",
@@ -212,7 +216,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
         AgentAppProfile profile = new AgentAppProfile();
         profile.setName("readonly-profile-" + System.currentTimeMillis());
         profile.setAppType(AgentApplicationType.GENERIC);
-        profile.setTemplateId(template.getId());
+        profile.setTemplateVersion(template.getCurrentVersion());
         DockerComposeConfig profileConfig = new DockerComposeConfig();
         profileConfig.setCompose(compose.get());
         profile.setConfig(profileConfig);
@@ -231,6 +235,7 @@ public class ProfileConfigTest extends AbstractContainerTest {
             AgentAppEventRequest installRequest = new AgentAppEventRequest();
             installRequest.setActionType(AgentAppEventActionType.INSTALL);
             installRequest.setApplication(app);
+            installRequest.setStepInputs(resolveRequiredStepInputs(app, AgentAppEventActionType.INSTALL));
             installed = cloudRestClient.installAgentApp(installRequest).getApplication();
             awaitEventFinished(installed.getId());
             projectName = getProjectName(installed.getId());

@@ -189,6 +189,7 @@ public class AppArgumentsTest extends AbstractContainerTest {
         AgentAppEventRequest request = new AgentAppEventRequest();
         request.setActionType(AgentAppEventActionType.INSTALL);
         request.setApplication(app);
+        request.setStepInputs(resolveRequiredStepInputs(app, AgentAppEventActionType.INSTALL));
         return cloudRestClient.installAgentApp(request).getApplication();
     }
 

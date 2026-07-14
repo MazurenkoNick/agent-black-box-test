@@ -33,8 +33,8 @@ public class AppUpdateTest extends AbstractContainerTest {
 
     @Test
     public void testUpdateRedeploysContainersInDind() {
-        // Install with 1.0.0 (nginx:alpine)
-        AgentAppTemplate template100 = getGenericTemplate("1.0.0");
+        // Install the generic template (nginx:alpine)
+        AgentAppTemplate template100 = getLatestGenericTemplate();
         Optional<JsonNode> compose = getComposeTemplateByName(template100, "default");
         AgentApplication app = null;
         String projectName = null;

@@ -20,6 +20,7 @@ import org.awaitility.Awaitility;
 import org.junit.Assert;
 import org.junit.Test;
 import org.thingsboard.server.common.data.agent.AgentApplication;
+import org.thingsboard.server.common.data.agent.AgentApplicationInfo;
 import org.thingsboard.server.common.data.agent.AgentApplicationOrigin;
 import org.thingsboard.server.common.data.agent.AgentApplicationType;
 import org.thingsboard.server.common.data.page.PageData;
@@ -46,7 +47,7 @@ public class StateSyncTest extends AbstractContainerTest {
                     .pollInterval(5, TimeUnit.SECONDS)
                     .atMost(180, TimeUnit.SECONDS)
                     .until(() -> {
-                        PageData<AgentApplication> apps = cloudRestClient.getAgentApplicationsByAgentId(agent.getId(), new PageLink(100));
+                        PageData<AgentApplicationInfo> apps = cloudRestClient.getAgentApplicationsByAgentId(agent.getId(), new PageLink(100));
                         if (apps == null || apps.getData().isEmpty()) return false;
                         return apps.getData().stream()
                                 .anyMatch(app -> projectName.equals(app.getProjectName()));
@@ -66,7 +67,7 @@ public class StateSyncTest extends AbstractContainerTest {
             Assert.assertEquals("App with unknown image should fall back to GENERIC type",
                     AgentApplicationType.GENERIC, syncedApp.getAppType());
             Assert.assertEquals("App should be bound to the latest GENERIC template",
-                    getLatestGenericTemplate().getId(), syncedApp.getTemplateId());
+                    getLatestGenericTemplate().getCurrentVersion(), syncedApp.getTemplateVersion());
 
             log.info("Agent synced external project '{}' as app {}", projectName, syncedApp.getId());
         } finally {
