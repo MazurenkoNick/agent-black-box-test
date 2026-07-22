@@ -22,7 +22,7 @@ services:
       TB_KAFKA_SERVERS: "kafka:9092"
       AGENT_APP_TEMPLATE_SYNC_ENABLED: "true"
       AGENT_APP_TEMPLATE_SYNC_REPO_URI: "https://github.com/MazurenkoNick/agent-app-templates.git"
-#      AGENT_APP_TEMPLATE_SYNC_BRANCH: "one-template-optimization"
+      AGENT_APP_TEMPLATE_SYNC_BRANCH: "subfolder-test-in-compose"
 #      AGENT_APP_TEMPLATE_UPDATE_SERVER_BASE_URL: "http://host.docker.internal:8090"
     env_file:
       - ./tb-node.env

@@ -133,7 +133,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
 
     @Test
     public void testProvisioningHappyPath() {
-        AgentProfile agentProfile = createProvisionProfile(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
+        AgentProfile agentProfile = createProvisionProfile(AgentProvisionType.AUTO_INSTALL_PER_APP_PROFILE);
         Assert.assertNotNull("Agent Profile should have auto-generated provision key", agentProfile.getProvisionKey());
         Assert.assertNotNull("Agent Profile should have auto-generated provision secret", agentProfile.getProvisionSecret());
 
@@ -151,7 +151,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
 
     @Test
     public void testProvisioningInvalidKey() {
-        AgentProfile agentProfile = createProvisionProfile(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
+        AgentProfile agentProfile = createProvisionProfile(AgentProvisionType.AUTO_INSTALL_PER_APP_PROFILE);
 
         String containerId = startProvisioningAgent("not-a-real-key", agentProfile.getProvisionSecret(), null);
 
@@ -165,7 +165,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
 
     @Test
     public void testProvisioningInvalidSecret() {
-        AgentProfile agentProfile = createProvisionProfile(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
+        AgentProfile agentProfile = createProvisionProfile(AgentProvisionType.AUTO_INSTALL_PER_APP_PROFILE);
 
         String containerId = startProvisioningAgent(agentProfile.getProvisionKey(), "wrong-secret", null);
 
@@ -196,7 +196,7 @@ public class AgentProvisioningTest extends AbstractContainerTest {
 
     @Test
     public void testCredentialPersistenceAcrossRestart() {
-        AgentProfile agentProfile = createProvisionProfile(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
+        AgentProfile agentProfile = createProvisionProfile(AgentProvisionType.AUTO_INSTALL_PER_APP_PROFILE);
 
         // Create a named volume to persist ~/.tb-agent/credentials.json across restarts
         String volumeName = "provision-creds-" + System.nanoTime();

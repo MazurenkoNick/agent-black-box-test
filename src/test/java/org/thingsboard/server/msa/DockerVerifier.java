@@ -16,11 +16,14 @@
 package org.thingsboard.server.msa;
 
 import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.InspectContainerResponse;
+import com.github.dockerjava.api.command.InspectVolumeResponse;
 import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.ExposedPort;
+import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Ports;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
@@ -29,11 +32,13 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Connects to the Docker-in-Docker (DinD) daemon to verify containers
@@ -210,6 +215,68 @@ public class DockerVerifier {
             dockerClient.removeContainerCmd(c.getId()).withForce(true).exec();
         }
         log.info("Removed {} container(s) for project '{}'", containers.size(), projectName);
+    }
+
+    /**
+     * Result of a command executed inside a DinD container: process exit code
+     * and combined stdout+stderr.
+     */
+    public record ExecResult(int exitCode, String output) {}
+
+    /**
+     * Executes a command inside the container backing the given compose service and
+     * returns its exit code and output. Used to interact with a deployed service the
+     * way a user would (e.g. run psql against a postgres service to seed/verify data).
+     */
+    public ExecResult execInContainer(String projectName, String serviceName, String... command) {
+        Container container = listContainersByProject(projectName).stream()
+                .filter(c -> {
+                    String svc = c.getLabels() != null ? c.getLabels().get(COMPOSE_SERVICE_LABEL) : null;
+                    return serviceName.equals(svc);
+                })
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "No container for service '" + serviceName + "' in project '" + projectName + "'"));
+
+        String execId = dockerClient.execCreateCmd(container.getId())
+                .withAttachStdout(true)
+                .withAttachStderr(true)
+                .withCmd(command)
+                .exec()
+                .getId();
+
+        StringBuilder output = new StringBuilder();
+        try {
+            dockerClient.execStartCmd(execId)
+                    .exec(new ResultCallback.Adapter<Frame>() {
+                        @Override
+                        public void onNext(Frame frame) {
+                            output.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                        }
+                    })
+                    .awaitCompletion(60, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while executing command in container", e);
+        }
+
+        Long exitCode = dockerClient.inspectExecCmd(execId).exec().getExitCodeLong();
+        return new ExecResult(exitCode != null ? exitCode.intValue() : -1, output.toString());
+    }
+
+    public List<String> listVolumeNames() {
+        try {
+            return dockerClient.listVolumesCmd().exec().getVolumes().stream()
+                    .map(InspectVolumeResponse::getName)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("Failed to list volumes: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    public boolean hasVolumeWithPrefix(String prefix) {
+        return listVolumeNames().stream().anyMatch(name -> name.startsWith(prefix));
     }
 
     public String getContainerState(String projectName, String serviceName) {

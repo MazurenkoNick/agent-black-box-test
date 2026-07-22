@@ -257,7 +257,7 @@ public class AutoInstallTest extends AbstractContainerTest {
     private AgentProfile createProvisionAgentProfile() {
         AgentProfile agentProfile = new AgentProfile();
         agentProfile.setName("auto-install-agentProfile-" + System.currentTimeMillis());
-        agentProfile.setProvisionType(AgentProvisionType.ALLOW_CREATE_NEW_AGENTS);
+        agentProfile.setProvisionType(AgentProvisionType.AUTO_INSTALL_PER_APP_PROFILE);
         agentProfile = cloudRestClient.saveAgentProfile(agentProfile);
         agentProfileIds.add(agentProfile.getId());
         return agentProfile;
