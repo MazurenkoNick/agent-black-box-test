@@ -13,7 +13,8 @@ services:
     environment:
       TB_SERVICE_ID: tb-monolith
       TB_SERVICE_TYPE: monolith
-      MQTT_ENABLED: "false"
+      # MQTT transport is required by the gateway BBT cases (tb-gateway connects over MQTT)
+      MQTT_ENABLED: "true"
       COAP_ENABLED: "false"
       LWM2M_ENABLED: "false"
       SNMP_ENABLED: "false"
@@ -23,7 +24,7 @@ services:
       AGENT_APP_TEMPLATE_SYNC_ENABLED: "true"
       AGENT_APP_TEMPLATE_SYNC_REPO_URI: "https://github.com/MazurenkoNick/agent-app-templates.git"
       AGENT_APP_TEMPLATE_SYNC_BRANCH: "subfolder-test-in-compose"
-#      AGENT_APP_TEMPLATE_UPDATE_SERVER_BASE_URL: "http://host.docker.internal:8090"
+      AGENT_APP_TEMPLATE_UPDATE_SERVER_BASE_URL: "http://host.docker.internal:8090"
     env_file:
       - ./tb-node.env
     volumes:

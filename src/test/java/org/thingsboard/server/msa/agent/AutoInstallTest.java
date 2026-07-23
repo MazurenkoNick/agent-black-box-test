@@ -72,9 +72,12 @@ import static org.thingsboard.server.msa.config.TestConfiguration.TB_MONOLITH_SE
 @Slf4j
 public class AutoInstallTest extends AbstractContainerTest {
 
+    private static final String LEGACY_GATEWAY_IMAGE = "thingsboard/tb-gateway:3.6.3";
+
     private static DockerClient dockerClient;
     private static String networkName;
     private static String agentImage;
+    private static String tbMonolithIp;
 
     private final List<String> containerIds = new ArrayList<>();
     private final List<String> volumeNames = new ArrayList<>();
@@ -92,6 +95,9 @@ public class AutoInstallTest extends AbstractContainerTest {
 
         var inspection = dockerClient.inspectContainerCmd(tbContainer.getContainerId()).exec();
         networkName = inspection.getNetworkSettings().getNetworks().keySet().iterator().next();
+        // Containers inside DinD cannot resolve outer compose network aliases (e.g. 'tb-monolith'),
+        // so tests that need an app to reach the platform pass its network IP instead.
+        tbMonolithIp = inspection.getNetworkSettings().getNetworks().get(networkName).getIpAddress();
 
         var agentContainer = ContainerTestSuite.testContainer
                 .getContainerByServiceName(TB_AGENT_SERVICE_NAME)
@@ -252,6 +258,86 @@ public class AutoInstallTest extends AbstractContainerTest {
     private AgentAppTemplate getLatestGatewayTemplate() {
         return cloudRestClient.getLatestAgentAppTemplate(AgentApplicationType.GATEWAY, AgentAppConfigType.DOCKER_COMPOSE)
                 .orElseThrow(() -> new IllegalStateException("No GATEWAY DOCKER_COMPOSE template found"));
+    }
+
+    /**
+     * Auto-installs a GATEWAY app whose profile compose uses the legacy env schema
+     * (pre-3.6 gateway images read unprefixed 'host'/'port'/'accessToken' instead of TB_GW_*)
+     * and verifies the gateway is functional post-install: the real legacy image starts in DinD,
+     * connects to the platform over MQTT with the injected token, and the auto-created
+     * device becomes active.
+     */
+    @Test
+    public void testAutoInstallLegacyGatewayIsFunctional() {
+        // pre-pull the real gateway image so the container-start await doesn't burn its timeout on the pull
+        dockerVerifier.ensureImage(LEGACY_GATEWAY_IMAGE);
+
+        AgentAppTemplate template = getLatestGatewayTemplate();
+        JsonNode compose = buildLegacyGatewayCompose(tbMonolithIp);
+
+        AgentAppProfile profile = createProfile("auto-gw-legacy",
+                AgentApplicationType.GATEWAY, template, compose);
+        AgentProfile agentProfile = createProvisionAgentProfile();
+        cloudRestClient.assignAppProfileToAgentProfile(agentProfile.getId(), profile.getId());
+
+        Agent provisioned = provisionAndConnect(agentProfile);
+
+        AgentApplication app = awaitAutoInstalledApp(provisioned.getId(), profile.getId());
+        Assert.assertEquals(AgentApplicationOrigin.AUTO_PROVISIONED, app.getOrigin());
+        Assert.assertEquals(AgentApplicationType.GATEWAY, app.getAppType());
+        List<EntityRelation> managedByAgent = cloudRestClient.findByTo(app.getId(), EntityRelation.MANAGED_BY_AGENT_APP_TYPE, RelationTypeGroup.AGENT);
+        Assert.assertEquals("GATEWAY app should have a related entity", 1, managedByAgent.size());
+
+        DeviceId deviceId = new DeviceId(managedByAgent.getFirst().getFrom().getId());
+        createdDeviceIds.add(deviceId);
+
+        DeviceCredentials creds = cloudRestClient.getDeviceCredentialsByDeviceId(deviceId)
+                .orElseThrow(() -> new AssertionError("Device credentials not found"));
+        Assert.assertEquals("Legacy compose without username/password implies ACCESS_TOKEN",
+                DeviceCredentialsType.ACCESS_TOKEN, creds.getCredentialsType());
+
+        // Credentials must be injected under the legacy env names, not TB_GW_*
+        AgentApplication fullApp = getAgentApplicationById(app.getId())
+                .orElseThrow(() -> new AssertionError("App not found: " + app.getId()));
+        JsonNode env = ((DockerComposeConfig) fullApp.getConfig()).getCompose()
+                .get("services").get("tb-gateway").get("environment");
+        Assert.assertEquals(creds.getCredentialsId(), env.get("accessToken").asText());
+        Assert.assertEquals(tbMonolithIp, env.get("host").asText());
+        Assert.assertFalse("Legacy compose must not receive TB_GW_* env vars", env.has("TB_GW_ACCESS_TOKEN"));
+        Assert.assertFalse(env.has("TB_GW_SECURITY_TYPE"));
+
+        // The real legacy gateway container must start in DinD...
+        String projectName = getProjectName(app.getId());
+        awaitContainersRunning(projectName, 1);
+        Assert.assertTrue("Legacy gateway image should be running in DinD",
+                dockerVerifier.hasRunningContainerWithImage(projectName, LEGACY_GATEWAY_IMAGE));
+
+        // ...and do its job: connect over MQTT with the injected token -> device becomes active
+        awaitDeviceActive(deviceId);
+        log.info("Legacy gateway auto-install verified: device {} is active", deviceId);
+    }
+
+    private void awaitDeviceActive(DeviceId deviceId) {
+        Awaitility.await("gateway device " + deviceId + " connected and active")
+                .pollInterval(3, TimeUnit.SECONDS)
+                .atMost(180, TimeUnit.SECONDS)
+                .until(() -> cloudRestClient.getAttributeKvEntries(deviceId, List.of("active")).stream()
+                        .anyMatch(entry -> Boolean.TRUE.toString().equals(entry.getValueAsString())));
+    }
+
+    /**
+     * Compose using the legacy (pre-3.6) gateway env schema: unprefixed 'host'/'port'/'accessToken'.
+     * The token placeholder is replaced by MergeCredentialsToConfigRule under the same legacy names.
+     */
+    private JsonNode buildLegacyGatewayCompose(String tbHost) {
+        String json = "{\"services\":{\"tb-gateway\":{" +
+                "\"image\":\"" + LEGACY_GATEWAY_IMAGE + "\"," +
+                "\"environment\":{" +
+                "\"host\":\"" + tbHost + "\"," +
+                "\"port\":\"1883\"," +
+                "\"accessToken\":\"placeholder\"" +
+                "}}}}";
+        return JacksonUtil.toJsonNode(json);
     }
 
     private AgentProfile createProvisionAgentProfile() {

@@ -147,6 +147,14 @@ public class DockerVerifier {
         log.info("Tagged image '{}' as '{}' in DinD", sourceImage, targetImage);
     }
 
+    /**
+     * Pre-pulls an image into DinD so container-start awaits in tests don't spend
+     * their timeout on the (potentially slow) pull of a heavyweight image.
+     */
+    public void ensureImage(String image) {
+        pullImageIfMissing(image);
+    }
+
     private void pullImageIfMissing(String image) {
         if (imageExists(image)) {
             return;
